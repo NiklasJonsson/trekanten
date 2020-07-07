@@ -1,7 +1,6 @@
-use ash::{version::EntryV1_0, vk, Entry};
 use glfw::{Action, Context, Key};
 
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 
 mod instance;
 

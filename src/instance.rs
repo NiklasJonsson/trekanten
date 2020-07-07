@@ -1,3 +1,4 @@
+use ash::version::InstanceV1_0; // For destroy_instance
 use ash::{version::EntryV1_0, vk, Entry};
 use std::ffi::{CStr, CString};
 
@@ -7,8 +8,16 @@ use ash::extensions::{
 };
 
 pub struct Instance {
-    entry: Entry,
+    _entry: Entry,
     instance: ash::Instance,
+}
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        unsafe {
+            self.instance.destroy_instance(None);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +91,7 @@ fn check_extensions(
         }
     }
 
-    return Ok(());
+    Ok(())
 }
 
 impl Instance {
@@ -109,6 +118,9 @@ impl Instance {
 
         let instance = unsafe { entry.create_instance(&create_info, None)? };
 
-        Ok(Instance { entry, instance })
+        Ok(Instance {
+            _entry: entry,
+            instance,
+        })
     }
 }
