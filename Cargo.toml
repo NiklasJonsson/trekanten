@@ -8,3 +8,6 @@ edition = "2018"
 
 [dependencies]
 ash = "0.31.0"
+glfw = {version = "0.30.0", features = ["vulkan"]}
+nalgebra-glm = "0.7.0"
+
