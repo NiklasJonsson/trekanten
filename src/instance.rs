@@ -2,11 +2,6 @@ use ash::version::InstanceV1_0; // For destroy_instance
 use ash::{version::EntryV1_0, vk, Entry};
 use std::ffi::{CStr, CString};
 
-use ash::extensions::{
-    ext::DebugUtils,
-    khr::{Surface, Swapchain},
-};
-
 pub struct Instance {
     _entry: Entry,
     instance: ash::Instance,
@@ -94,6 +89,41 @@ fn check_extensions(
     Ok(())
 }
 
+const DISABLE_VALIDATION_LAYERS_ENV_VAR: &str = "TREK_DISABLE_VALIDATION_LAYERS";
+
+fn validation_layers() -> Vec<CString> {
+    vec![CString::new("VK_LAYER_KHRONOS_validation").expect("Failed to create CString")]
+}
+
+fn choose_validation_layers(entry: &Entry) -> Vec<CString> {
+    if std::env::var(DISABLE_VALIDATION_LAYERS_ENV_VAR).is_err() {
+        let requested = validation_layers();
+
+        let layers = match entry.enumerate_instance_layer_properties() {
+            Ok(l) => l,
+            Err(_) => return Vec::new(),
+        };
+
+        for req in requested.iter() {
+            let mut found = false;
+            for layer in layers.iter() {
+                let l = unsafe { CStr::from_ptr(layer.layer_name.as_ptr()) };
+                if l == req.as_c_str() {
+                    found = true;
+                }
+            }
+
+            if !found {
+                return Vec::new();
+            }
+        }
+
+        requested
+    } else {
+        Vec::new()
+    }
+}
+
 impl Instance {
     pub fn new(required_window_extensions: &[CString]) -> Result<Self, InitError> {
         let entry = Entry::new().expect("Failed to create Entry!");
@@ -112,9 +142,22 @@ impl Instance {
             ..Default::default()
         };
 
+        let validation_layers = choose_validation_layers(&entry);
+
+        let layers_ptrs = validation_layers
+            .into_iter()
+            .map(|x| x.into_raw() as *const i8)
+            .collect::<Vec<_>>();
+
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
-            .enabled_extension_names(exts.as_slice());
+            .enabled_extension_names(exts.as_slice())
+            .enabled_layer_names(layers_ptrs.as_slice());
+
+        let _layers_owned = layers_ptrs
+            .iter()
+            .map(|x| unsafe { CString::from_raw(*x as *mut i8) })
+            .collect::<Vec<_>>();
 
         let instance = unsafe { entry.create_instance(&create_info, None)? };
 
