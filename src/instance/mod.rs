@@ -2,18 +2,21 @@ use ash::extensions::ext;
 use ash::version::InstanceV1_0; // For destroy_instance
 use ash::{version::EntryV1_0, vk, Entry};
 use std::ffi::{CStr, CString};
-
 use std::os::raw::c_char;
 
+pub mod device_selection;
+
+pub use device_selection::device_selection;
+
 pub struct Instance {
-    _entry: Entry,
-    instance: ash::Instance,
+    entry: Entry,
+    vk_instance: ash::Instance,
 }
 
 impl Drop for Instance {
     fn drop(&mut self) {
         unsafe {
-            self.instance.destroy_instance(None);
+            self.vk_instance.destroy_instance(None);
         }
     }
 }
@@ -24,6 +27,7 @@ pub enum InitError {
     CStrCreation(std::ffi::FromBytesWithNulError),
     VkError(ash::vk::Result),
     VkInstanceLoadError(Vec<&'static str>),
+    NoPhysicalDevice,
 }
 
 impl std::fmt::Display for InitError {
@@ -198,13 +202,15 @@ impl Instance {
             .enabled_extension_names(&extensions_ptrs)
             .enabled_layer_names(&layers_ptrs);
 
-        let instance = unsafe { entry.create_instance(&create_info, None)? };
+        let vk_instance = unsafe { entry.create_instance(&create_info, None)? };
 
         let _owned_layers = vec_cstring_from_raw(layers_ptrs);
         let _owned_extensions = vec_cstring_from_raw(extensions_ptrs);
-        Ok(Instance {
-            _entry: entry,
-            instance,
-        })
+
+        let instance = Instance { entry, vk_instance };
+
+        // TODO: Setup debug callbacks to log
+
+        Ok(instance)
     }
 }

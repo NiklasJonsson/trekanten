@@ -1,7 +1,7 @@
-mod instance;
-
 use glfw::{Action, Context, Key};
 use instance::{InitError, Instance};
+
+mod instance;
 
 fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
     match event {
@@ -69,6 +69,8 @@ fn main() {
         .expect("Could not get required instance extensions");
 
     let instance = Instance::new(&extensions).expect("Instance creation failed!");
+
+    let device = instance::device_selection(&instance);
 
     while !window.window.should_close() {
         window.glfw.poll_events();
