@@ -28,6 +28,7 @@ pub enum InitError {
     VkError(ash::vk::Result),
     VkInstanceLoadError(Vec<&'static str>),
     NoPhysicalDevice,
+    MissingGraphicsQueue,
 }
 
 impl std::fmt::Display for InitError {
