@@ -11,3 +11,6 @@ ash = "0.31.0"
 glfw = {version = "0.30.0", features = ["vulkan"]}
 nalgebra-glm = "0.7.0"
 
+# Util
+log = "0.4.8"
+env_logger = "0.7.1"

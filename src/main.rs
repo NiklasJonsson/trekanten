@@ -1,9 +1,6 @@
-use glfw::{Action, Context, Key};
-
-use std::ffi::CString;
-
 mod instance;
 
+use glfw::{Action, Context, Key};
 use instance::{InitError, Instance};
 
 fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
@@ -63,6 +60,7 @@ impl From<InitError> for RenderError {
 }
 
 fn main() {
+    env_logger::init();
     let mut window = Window::new();
 
     let extensions = window
@@ -70,12 +68,7 @@ fn main() {
         .get_required_instance_extensions()
         .expect("Could not get required instance extensions");
 
-    let raw_exts = extensions
-        .iter()
-        .map(|x| CString::new(x.as_str()).unwrap())
-        .collect::<Vec<_>>();
-
-    let instance = Instance::new(&raw_exts).expect("Instance creation failed!");
+    let instance = Instance::new(&extensions).expect("Instance creation failed!");
 
     while !window.window.should_close() {
         window.glfw.poll_events();
