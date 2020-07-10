@@ -8,7 +8,9 @@ edition = "2018"
 
 [dependencies]
 ash = "0.31.0"
-glfw = {version = "0.30.0", features = ["vulkan"]}
+ash-window = "0.4.1"
+raw-window-handle = "0.3.3"
+glfw = {version = "0.39.0", features = ["vulkan"]}
 nalgebra-glm = "0.7.0"
 
 # Util

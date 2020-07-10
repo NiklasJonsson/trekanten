@@ -7,8 +7,10 @@ use std::os::raw::c_char;
 use crate::util::LifetimeToken;
 
 pub mod device;
+pub mod surface;
 
 pub use device::device_selection;
+pub use surface::Surface;
 
 pub struct Instance {
     entry: Entry,
@@ -20,7 +22,7 @@ impl Drop for Instance {
     fn drop(&mut self) {
         if !self.lifetime_token.is_unique() {
             // TODO: Can we assert/panic here?
-            log::error!("Instance in dropped but there are still children alive!");
+            log::error!("Instance destroyed but there are still children alive!");
         }
         unsafe {
             self.vk_instance.destroy_instance(None);
@@ -169,9 +171,24 @@ fn choose_instance_extensions<T: AsRef<str>>(
     check_extensions(&required, &available)?;
     let mut instance_extensions = required.to_vec();
 
+    // Glfw gives only the xcb surface extension but ash-window tries to create a xlibs surface.
+    // Add the xlib one if, there is only a xcb surface extension.
+    if instance_extensions
+        .iter()
+        .any(|x| x.as_c_str() == ash::extensions::khr::XcbSurface::name())
+        && !instance_extensions
+            .iter()
+            .any(|x| x.as_c_str() == ash::extensions::khr::XlibSurface::name())
+    {
+        instance_extensions.push(ash::extensions::khr::XlibSurface::name().to_owned());
+    }
+
     if use_vk_validation() {
         instance_extensions.push(ext::DebugUtils::name().to_owned());
     }
+
+    log::trace!("Choosing instance extensions:");
+    log_cstrings(&instance_extensions);
 
     Ok(instance_extensions)
 }
@@ -230,5 +247,20 @@ impl Instance {
 
     fn lifetime_token(&self) -> LifetimeToken<Self> {
         self.lifetime_token.clone()
+    }
+
+    pub fn create_surface<W: raw_window_handle::HasRawWindowHandle>(
+        &self,
+        w: &W,
+    ) -> Result<Surface, InitError> {
+        let surface_khr =
+            unsafe { ash_window::create_surface(&self.entry, &self.vk_instance, w, None) }?;
+
+        Ok(Surface::new(
+            &self.entry,
+            &self.vk_instance,
+            surface_khr,
+            self.lifetime_token(),
+        ))
     }
 }

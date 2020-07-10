@@ -1,4 +1,5 @@
-use glfw::{Action, Context, Key};
+use glfw::{Action, Key};
+
 use instance::{InitError, Instance};
 
 mod instance;
@@ -24,9 +25,7 @@ struct Window {
 }
 
 impl Window {
-    pub fn new() -> Self {
-        let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).expect("Failed to init glfw");
-
+    pub fn new(mut glfw: glfw::Glfw) -> Self {
         assert!(glfw.vulkan_supported(), "No vulkan!");
 
         glfw.window_hint(glfw::WindowHint::ClientApi(glfw::ClientApiHint::NoApi));
@@ -62,16 +61,18 @@ impl From<InitError> for RenderError {
 
 fn main() {
     env_logger::init();
-    let mut window = Window::new();
+    let glfw = glfw::init(glfw::FAIL_ON_ERRORS).expect("Failed to init glfw");
 
-    let extensions = window
-        .glfw
+    let extensions = glfw
         .get_required_instance_extensions()
         .expect("Could not get required instance extensions");
 
     let instance = Instance::new(&extensions).expect("Instance creation failed!");
 
+    let mut window = Window::new(glfw);
     let device = instance::device_selection(&instance);
+
+    let surface = instance.create_surface(&window.window);
 
     while !window.window.should_close() {
         window.glfw.poll_events();

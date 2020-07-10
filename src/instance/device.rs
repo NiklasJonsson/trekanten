@@ -25,17 +25,17 @@ fn log_physical_devices(instance: &Instance, devices: &[ash::vk::PhysicalDevice]
     }
 }
 
-fn log_choice(instance: &Instance, device: &ash::vk::PhysicalDevice) {
+fn log_device(instance: &Instance, device: &ash::vk::PhysicalDevice) {
     use std::ffi::CStr;
 
-    log::info!("Chose vk device: {:?}", device);
+    log::trace!("Vk device: {:?}", device);
 
     let props = unsafe { instance.vk_instance.get_physical_device_properties(*device) };
-    log::info!("Properties:");
-    log::info!("\tvendor_id: {:?}", props.vendor_id);
-    log::info!("\tdevice_id: {:?}", props.device_id);
-    log::info!("\tdevice_type: {:?}", props.device_type);
-    log::info!("\tdevice_name: {:?}", unsafe {
+    log::trace!("Properties:");
+    log::trace!("\tvendor_id: {:?}", props.vendor_id);
+    log::trace!("\tdevice_id: {:?}", props.device_id);
+    log::trace!("\tdevice_type: {:?}", props.device_type);
+    log::trace!("\tdevice_name: {:?}", unsafe {
         CStr::from_ptr(props.device_name.as_ptr())
     });
 }
@@ -52,6 +52,9 @@ struct QueueFamilies {
 }
 
 fn find_queue_families(instance: &Instance, device: &vk::PhysicalDevice) -> QueueFamilies {
+    log::trace!("Checking queues for:");
+    log_device(instance, device);
+
     let queue_fam_props = unsafe {
         instance
             .vk_instance
@@ -99,9 +102,9 @@ fn score_device(instance: &Instance, device: &vk::PhysicalDevice) -> u32 {
 }
 
 fn log_queue_fam(qfam: &vk::QueueFamilyProperties) {
-    log::info!("Choosing queue:");
-    log::info!("\tflags: {:?}", qfam.queue_flags);
-    log::info!("\tqueue_count: {}", qfam.queue_count);
+    log::trace!("Choosing queue:");
+    log::trace!("\tflags: {:?}", qfam.queue_flags);
+    log::trace!("\tqueue_count: {}", qfam.queue_count);
     log::trace!("{:?}", qfam);
 }
 
@@ -118,7 +121,8 @@ pub fn device_selection(instance: &Instance) -> Result<Device, InitError> {
     physical_devices.sort_by(|a, b| score_device(instance, b).cmp(&score_device(instance, a)));
 
     let vk_phys_device = physical_devices[0];
-    log_choice(instance, &vk_phys_device);
+    log::trace!("Choosing device:");
+    log_device(instance, &vk_phys_device);
 
     let queue_families = find_queue_families(instance, &vk_phys_device);
 
