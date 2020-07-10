@@ -4,17 +4,24 @@ use ash::{version::EntryV1_0, vk, Entry};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-pub mod device_selection;
+use crate::util::LifetimeToken;
 
-pub use device_selection::device_selection;
+pub mod device;
+
+pub use device::device_selection;
 
 pub struct Instance {
     entry: Entry,
     vk_instance: ash::Instance,
+    lifetime_token: LifetimeToken<Self>,
 }
 
 impl Drop for Instance {
     fn drop(&mut self) {
+        if !self.lifetime_token.is_unique() {
+            // TODO: Can we assert/panic here?
+            log::error!("Instance in dropped but there are still children alive!");
+        }
         unsafe {
             self.vk_instance.destroy_instance(None);
         }
@@ -208,10 +215,20 @@ impl Instance {
         let _owned_layers = vec_cstring_from_raw(layers_ptrs);
         let _owned_extensions = vec_cstring_from_raw(extensions_ptrs);
 
-        let instance = Instance { entry, vk_instance };
+        let lifetime_token = LifetimeToken::<Instance>::new();
+
+        let instance = Instance {
+            entry,
+            vk_instance,
+            lifetime_token,
+        };
 
         // TODO: Setup debug callbacks to log
 
         Ok(instance)
+    }
+
+    fn lifetime_token(&self) -> LifetimeToken<Self> {
+        self.lifetime_token.clone()
     }
 }

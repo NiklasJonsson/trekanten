@@ -2,6 +2,7 @@ use glfw::{Action, Context, Key};
 use instance::{InitError, Instance};
 
 mod instance;
+mod util;
 
 fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
     match event {
