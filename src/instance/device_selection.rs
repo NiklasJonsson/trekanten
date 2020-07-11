@@ -44,12 +44,6 @@ struct QueueFamiliesQuery {
     present: Option<QueueFamily>,
 }
 
-impl QueueFamiliesQuery {
-    pub fn is_complete(&self) -> bool {
-        self.graphics.is_some() && self.present.is_some()
-    }
-}
-
 #[derive(Clone, Debug)]
 struct QueueFamilies {
     graphics: QueueFamily,
@@ -152,7 +146,7 @@ fn device_supports_extensions<T: AsRef<CStr>>(
         }
     }
 
-    return Ok(true);
+    Ok(true)
 }
 
 struct SwapchainSupportDetails {
@@ -204,7 +198,7 @@ fn check_device_suitability(
         return Ok(DeviceSuitability::MissingPresentQueue);
     }
 
-    return Ok(DeviceSuitability::Suitable);
+    Ok(DeviceSuitability::Suitable)
 }
 
 fn score_device(
