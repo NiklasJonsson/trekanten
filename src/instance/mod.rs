@@ -38,6 +38,7 @@ pub enum InitError {
     VkInstanceLoadError(Vec<&'static str>),
     NoPhysicalDevice,
     MissingGraphicsQueue,
+    NoSurfaceSupport,
 }
 
 impl std::fmt::Display for InitError {

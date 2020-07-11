@@ -70,9 +70,11 @@ fn main() {
     let instance = Instance::new(&extensions).expect("Instance creation failed!");
 
     let mut window = Window::new(glfw);
-    let device = instance::device_selection(&instance);
+    let surface = instance
+        .create_surface(&window.window)
+        .expect("Unable to create surface");
 
-    let surface = instance.create_surface(&window.window);
+    let device = instance::device_selection(&instance, &surface);
 
     while !window.window.should_close() {
         window.glfw.poll_events();
