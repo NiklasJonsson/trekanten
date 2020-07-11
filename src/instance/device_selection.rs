@@ -9,6 +9,7 @@ use std::convert::{TryFrom, TryInto};
 use crate::device::Device;
 use crate::instance::InitError;
 use crate::instance::Instance;
+use crate::queue::{QueueFamilies, QueueFamily};
 use crate::surface::Surface;
 
 fn log_physical_devices(instance: &Instance, devices: &[ash::vk::PhysicalDevice]) {
@@ -32,22 +33,14 @@ fn log_device(instance: &Instance, device: &vk::PhysicalDevice) {
     });
 }
 
-#[derive(Clone, Debug)]
-struct QueueFamily {
-    index: u32,
-    props: vk::QueueFamilyProperties,
+fn required_device_extensions() -> Vec<CString> {
+    vec![ash::extensions::khr::Swapchain::name().to_owned()]
 }
 
 #[derive(Clone, Debug)]
 struct QueueFamiliesQuery {
     graphics: Option<QueueFamily>,
     present: Option<QueueFamily>,
-}
-
-#[derive(Clone, Debug)]
-struct QueueFamilies {
-    graphics: QueueFamily,
-    present: QueueFamily,
 }
 
 impl TryFrom<QueueFamiliesQuery> for QueueFamilies {
@@ -116,11 +109,6 @@ fn find_queue_families(
 
     Ok(families)
 }
-
-fn required_device_extensions() -> Vec<CString> {
-    vec![ash::extensions::khr::Swapchain::name().to_owned()]
-}
-
 fn device_supports_extensions<T: AsRef<CStr>>(
     instance: &Instance,
     device: &vk::PhysicalDevice,
@@ -149,12 +137,6 @@ fn device_supports_extensions<T: AsRef<CStr>>(
     Ok(true)
 }
 
-struct SwapchainSupportDetails {
-    capabilites: vk::SurfaceCapabilitiesKHR,
-    formats: Vec<vk::SurfaceFormatKHR>,
-    present_modes: Vec<vk::PresentModeKHR>,
-}
-
 // TODO: Improve granularity of MissingRequiredExtensions
 #[derive(Debug, Clone, Copy)]
 pub enum DeviceSuitability {
@@ -162,6 +144,8 @@ pub enum DeviceSuitability {
     MissingRequiredExtensions,
     MissingGraphicsQueue,
     MissingPresentQueue,
+    UnsuitableSwapchainFormat,
+    UnsuitableSwapchainPresentMode,
 }
 
 impl DeviceSuitability {
@@ -196,6 +180,16 @@ fn check_device_suitability(
 
     if fams.present.is_none() {
         return Ok(DeviceSuitability::MissingPresentQueue);
+    }
+
+    let swapchain_query = surface.query_swapchain_support(device)?;
+
+    if swapchain_query.formats.is_empty() {
+        return Ok(DeviceSuitability::UnsuitableSwapchainFormat);
+    }
+
+    if swapchain_query.present_modes.is_empty() {
+        return Ok(DeviceSuitability::UnsuitableSwapchainPresentMode);
     }
 
     Ok(DeviceSuitability::Suitable)
@@ -326,7 +320,12 @@ pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device
 
     let _owned_layers = super::vec_cstring_from_raw(layers_ptrs);
     let _owned_extensions = super::vec_cstring_from_raw(extensions_ptrs);
-    let device = Device::new(vk_device, instance.lifetime_token());
+    let device = Device::new(
+        vk_device,
+        vk_phys_device,
+        queue_families,
+        instance.lifetime_token(),
+    );
 
     Ok(device)
 }

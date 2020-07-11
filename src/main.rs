@@ -4,7 +4,9 @@ use instance::{InitError, Instance};
 
 mod device;
 mod instance;
+mod queue;
 mod surface;
+mod swapchain;
 mod util;
 
 fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
@@ -14,8 +16,8 @@ fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
     }
 }
 
-const WINDOW_HEIGHT: u32 = 300;
-const WINDOW_WIDTH: u32 = 300;
+pub const WINDOW_HEIGHT: u32 = 300;
+pub const WINDOW_WIDTH: u32 = 300;
 const WINDOW_TITLE: &str = "Vulkan";
 
 type WindowEvents = std::sync::mpsc::Receiver<(f64, glfw::WindowEvent)>;
@@ -79,6 +81,14 @@ fn main() {
     let device = instance
         .create_device(&surface)
         .expect("Unable to create device!");
+
+    // TODO: Move this function to instance?
+    // It is techically a child of the device...
+    // Maybe the device should have a reference to instance?
+    // Should the device "consume" the instance?
+    let swapchain = device
+        .create_swapchain(&instance, &surface)
+        .expect("Unable to create swapchain!");
 
     while !window.window.should_close() {
         window.glfw.poll_events();

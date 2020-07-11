@@ -193,4 +193,8 @@ impl Instance {
     pub fn create_device(&self, surface: &Surface) -> Result<Device, InitError> {
         device_selection::device_selection(self, surface)
     }
+
+    pub fn inner_vk_instance(&self) -> &ash::Instance {
+        &self.vk_instance
+    }
 }
