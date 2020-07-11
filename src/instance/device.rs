@@ -1,9 +1,12 @@
-use super::InitError;
-use super::Instance;
 use ash::version::DeviceV1_0;
 use ash::version::InstanceV1_0;
 use ash::vk;
 
+use std::ffi::CStr;
+use std::ffi::CString;
+
+use super::InitError;
+use super::Instance;
 use super::Surface;
 use crate::util::LifetimeToken;
 
@@ -27,8 +30,6 @@ fn log_physical_devices(instance: &Instance, devices: &[ash::vk::PhysicalDevice]
 }
 
 fn log_device(instance: &Instance, device: &vk::PhysicalDevice) {
-    use std::ffi::CStr;
-
     log::trace!("Vk device: {:?}", device);
 
     let props = unsafe { instance.vk_instance.get_physical_device_properties(*device) };
@@ -110,6 +111,38 @@ fn find_queue_families(
     Ok(families)
 }
 
+fn required_device_extensions() -> Vec<CString> {
+    vec![ash::extensions::khr::Swapchain::name().to_owned()]
+}
+
+fn device_supports_extensions<T: AsRef<CStr>>(
+    instance: &Instance,
+    device: &vk::PhysicalDevice,
+    required_extensions: &[T],
+) -> Result<bool, InitError> {
+    let available = unsafe {
+        instance
+            .vk_instance
+            .enumerate_device_extension_properties(*device)
+    }?;
+
+    for r in required_extensions.iter() {
+        let mut found = false;
+        for avail in available.iter() {
+            let a = unsafe { CStr::from_ptr(avail.extension_name.as_ptr()) };
+            if r.as_ref() == a {
+                found = true;
+            }
+        }
+
+        if !found {
+            return Ok(false);
+        }
+    }
+
+    return Ok(true);
+}
+
 fn score_device(
     instance: &Instance,
     device: &vk::PhysicalDevice,
@@ -122,6 +155,8 @@ fn score_device(
     if device_props.device_type == vk::PhysicalDeviceType::DISCRETE_GPU {
         score += 100;
     }
+
+    if device_supports_extensions(instance, device, &required_device_extensions())? {}
 
     if find_queue_families(instance, device, surface)?.is_complete() {
         score += 1000;
@@ -216,9 +251,13 @@ pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device
     let validation_layers = super::choose_validation_layers(&instance.entry);
     let layers_ptrs = super::vec_cstring_to_raw(validation_layers);
 
+    let extensions = required_device_extensions();
+    let extensions_ptrs = super::vec_cstring_to_raw(extensions);
+
     let device_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_infos)
-        .enabled_layer_names(&layers_ptrs);
+        .enabled_layer_names(&layers_ptrs)
+        .enabled_extension_names(&extensions_ptrs);
 
     let vk_device = unsafe {
         instance
@@ -227,6 +266,7 @@ pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device
     }?;
 
     let _owned_layers = super::vec_cstring_from_raw(layers_ptrs);
+    let _owned_extensions = super::vec_cstring_from_raw(extensions_ptrs);
     let device = Device {
         vk_device,
         _parent_lifetime_token: instance.lifetime_token(),
