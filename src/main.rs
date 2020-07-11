@@ -2,7 +2,9 @@ use glfw::{Action, Key};
 
 use instance::{InitError, Instance};
 
+mod device;
 mod instance;
+mod surface;
 mod util;
 
 fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
@@ -74,7 +76,9 @@ fn main() {
         .create_surface(&window.window)
         .expect("Unable to create surface");
 
-    let device = instance::device_selection(&instance, &surface);
+    let device = instance
+        .create_device(&surface)
+        .expect("Unable to create device!");
 
     while !window.window.should_close() {
         window.glfw.poll_events();

@@ -4,7 +4,7 @@ use ash::vk::SurfaceKHR as SurfaceHandle;
 
 use crate::instance::InitError;
 use crate::instance::Instance;
-use crate::util::LifetimeToken;
+use crate::util::lifetime::LifetimeToken;
 
 pub struct Surface {
     handle: SurfaceHandle,

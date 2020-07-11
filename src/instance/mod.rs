@@ -2,15 +2,16 @@ use ash::extensions::ext;
 use ash::version::InstanceV1_0; // For destroy_instance
 use ash::{version::EntryV1_0, vk, Entry};
 use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
 
-use crate::util::LifetimeToken;
+use crate::device::Device;
+use crate::surface::Surface;
+use crate::util::ffi::*;
+use crate::util::lifetime::LifetimeToken;
 
-pub mod device;
-pub mod surface;
+pub mod device_selection;
+pub mod error;
 
-pub use device::device_selection;
-pub use surface::Surface;
+pub use error::*;
 
 pub struct Instance {
     entry: Entry,
@@ -26,62 +27,6 @@ impl Drop for Instance {
         }
         unsafe {
             self.vk_instance.destroy_instance(None);
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum InitError {
-    MissingExtension(CString),
-    CStrCreation(std::ffi::FromBytesWithNulError),
-    VkError(ash::vk::Result),
-    VkInstanceLoadError(Vec<&'static str>),
-    NoPhysicalDevice,
-    MissingGraphicsQueue,
-    NoSurfaceSupport,
-}
-
-impl std::fmt::Display for InitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            InitError::MissingExtension(c_string) => {
-                write!(f, "Extension required but not available: {:?}", c_string)
-            }
-            _ => unimplemented!(),
-        }
-    }
-}
-
-impl std::error::Error for InitError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            InitError::CStrCreation(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl From<std::ffi::FromBytesWithNulError> for InitError {
-    fn from(e: std::ffi::FromBytesWithNulError) -> Self {
-        Self::CStrCreation(e)
-    }
-}
-
-impl From<ash::InstanceError> for InitError {
-    fn from(e: ash::InstanceError) -> Self {
-        match e {
-            ash::InstanceError::VkError(r) => InitError::VkError(r),
-            ash::InstanceError::LoadError(v) => InitError::VkInstanceLoadError(v),
-        }
-    }
-}
-
-impl From<ash::vk::Result> for InitError {
-    fn from(e: ash::vk::Result) -> Self {
-        if e == ash::vk::Result::SUCCESS {
-            unreachable!("Did not expect success for error!");
-        } else {
-            Self::VkError(e)
         }
     }
 }
@@ -113,12 +58,6 @@ const DISABLE_VALIDATION_LAYERS_ENV_VAR: &str = "TREK_DISABLE_VALIDATION_LAYERS"
 
 fn validation_layers() -> Vec<CString> {
     vec![CString::new("VK_LAYER_KHRONOS_validation").expect("Failed to create CString")]
-}
-
-fn log_cstrings(a: &[CString]) {
-    for cs in a {
-        log::trace!("{:?}", cs);
-    }
 }
 
 fn use_vk_validation() -> bool {
@@ -194,20 +133,6 @@ fn choose_instance_extensions<T: AsRef<str>>(
     Ok(instance_extensions)
 }
 
-/// This will leak memory if vec_ptrs_to_cstring is not called
-fn vec_cstring_to_raw(v: Vec<CString>) -> Vec<*const c_char> {
-    v.into_iter()
-        .map(|x| x.into_raw() as *const c_char)
-        .collect::<Vec<_>>()
-}
-
-/// Call this to reclaim memory of the vec of c_chars
-fn vec_cstring_from_raw(v: Vec<*const c_char>) -> Vec<CString> {
-    v.iter()
-        .map(|x| unsafe { CString::from_raw(*x as *mut c_char) })
-        .collect::<Vec<_>>()
-}
-
 impl Instance {
     pub fn new<T: AsRef<str>>(required_window_extensions: &[T]) -> Result<Self, InitError> {
         let entry = Entry::new().expect("Failed to create Entry!");
@@ -263,5 +188,9 @@ impl Instance {
             surface_khr,
             self.lifetime_token(),
         ))
+    }
+
+    pub fn create_device(&self, surface: &Surface) -> Result<Device, InitError> {
+        device_selection::device_selection(self, surface)
     }
 }

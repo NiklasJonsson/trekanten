@@ -1,25 +1,15 @@
-use ash::version::DeviceV1_0;
 use ash::version::InstanceV1_0;
 use ash::vk;
 
 use std::ffi::CStr;
 use std::ffi::CString;
 
-use super::InitError;
-use super::Instance;
-use super::Surface;
-use crate::util::LifetimeToken;
+use std::convert::{TryFrom, TryInto};
 
-pub struct Device {
-    vk_device: ash::Device,
-    _parent_lifetime_token: LifetimeToken<super::Instance>,
-}
-
-impl std::ops::Drop for Device {
-    fn drop(&mut self) {
-        unsafe { self.vk_device.destroy_device(None) };
-    }
-}
+use crate::device::Device;
+use crate::instance::InitError;
+use crate::instance::Instance;
+use crate::surface::Surface;
 
 fn log_physical_devices(instance: &Instance, devices: &[ash::vk::PhysicalDevice]) {
     for device in devices.iter() {
@@ -42,21 +32,42 @@ fn log_device(instance: &Instance, device: &vk::PhysicalDevice) {
     });
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct QueueFamily {
     index: u32,
     props: vk::QueueFamilyProperties,
 }
 
-#[derive(Copy, Clone, Debug)]
-struct QueueFamilies {
+#[derive(Clone, Debug)]
+struct QueueFamiliesQuery {
     graphics: Option<QueueFamily>,
     present: Option<QueueFamily>,
 }
 
-impl QueueFamilies {
+impl QueueFamiliesQuery {
     pub fn is_complete(&self) -> bool {
         self.graphics.is_some() && self.present.is_some()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct QueueFamilies {
+    graphics: QueueFamily,
+    present: QueueFamily,
+}
+
+impl TryFrom<QueueFamiliesQuery> for QueueFamilies {
+    type Error = InitError;
+    fn try_from(v: QueueFamiliesQuery) -> Result<Self, Self::Error> {
+        match (v.graphics, v.present) {
+            (None, _) => Err(InitError::UnsuitableDevice(
+                DeviceSuitability::MissingGraphicsQueue,
+            )),
+            (_, None) => Err(InitError::UnsuitableDevice(
+                DeviceSuitability::MissingPresentQueue,
+            )),
+            (Some(graphics), Some(present)) => Ok(QueueFamilies { graphics, present }),
+        }
     }
 }
 
@@ -64,7 +75,7 @@ fn find_queue_families(
     instance: &Instance,
     device: &vk::PhysicalDevice,
     surface: &Surface,
-) -> Result<QueueFamilies, InitError> {
+) -> Result<QueueFamiliesQuery, InitError> {
     log::trace!("Checking queues for:");
     log_device(instance, device);
 
@@ -79,7 +90,7 @@ fn find_queue_families(
         log::trace!("{:#?}", queue);
     }
 
-    let mut families = QueueFamilies {
+    let mut families = QueueFamiliesQuery {
         graphics: None,
         present: None,
     };
@@ -95,6 +106,7 @@ fn find_queue_families(
 
         let same_as_gfx = families
             .graphics
+            .as_ref()
             .map(|f| f.index as usize == i)
             .unwrap_or(false);
         // According to vulkan tutorial, "drawing and presentation" is more performant on the same
@@ -143,6 +155,58 @@ fn device_supports_extensions<T: AsRef<CStr>>(
     return Ok(true);
 }
 
+struct SwapchainSupportDetails {
+    capabilites: vk::SurfaceCapabilitiesKHR,
+    formats: Vec<vk::SurfaceFormatKHR>,
+    present_modes: Vec<vk::PresentModeKHR>,
+}
+
+// TODO: Improve granularity of MissingRequiredExtensions
+#[derive(Debug, Clone, Copy)]
+pub enum DeviceSuitability {
+    Suitable,
+    MissingRequiredExtensions,
+    MissingGraphicsQueue,
+    MissingPresentQueue,
+}
+
+impl DeviceSuitability {
+    pub fn is_suitable(&self) -> bool {
+        match self {
+            DeviceSuitability::Suitable => true,
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Display for DeviceSuitability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+fn check_device_suitability(
+    instance: &Instance,
+    device: &vk::PhysicalDevice,
+    surface: &Surface,
+) -> Result<DeviceSuitability, InitError> {
+    if !device_supports_extensions(instance, device, &required_device_extensions())? {
+        return Ok(DeviceSuitability::MissingRequiredExtensions);
+    }
+
+    let fams = find_queue_families(instance, device, surface)?;
+
+    if fams.graphics.is_none() {
+        return Ok(DeviceSuitability::MissingGraphicsQueue);
+    }
+
+    if fams.present.is_none() {
+        return Ok(DeviceSuitability::MissingPresentQueue);
+    }
+
+    return Ok(DeviceSuitability::Suitable);
+}
+
 fn score_device(
     instance: &Instance,
     device: &vk::PhysicalDevice,
@@ -156,9 +220,7 @@ fn score_device(
         score += 100;
     }
 
-    if device_supports_extensions(instance, device, &required_device_extensions())? {}
-
-    if find_queue_families(instance, device, surface)?.is_complete() {
+    if check_device_suitability(instance, device, surface)?.is_suitable() {
         score += 1000;
     }
 
@@ -173,24 +235,16 @@ fn log_queue_family(fam: &QueueFamily) {
 
 fn log_queue_families(qfams: &QueueFamilies) {
     log::trace!("Graphics:");
-    qfams
-        .graphics
-        .map_or_else(|| log::trace!("\tMissing!"), |f| log_queue_family(&f));
+    log_queue_family(&qfams.graphics);
     log::trace!("Present:");
-    qfams
-        .present
-        .map_or_else(|| log::trace!("\tMissing!"), |f| log_queue_family(&f));
+    log_queue_family(&qfams.present);
 }
 
 fn create_infos_for_families(
     queue_families: &QueueFamilies,
     prio: &[f32],
 ) -> Result<Vec<vk::DeviceQueueCreateInfo>, InitError> {
-    let (gfx, present) = match (queue_families.graphics, queue_families.present) {
-        (None, _) => return Err(InitError::MissingGraphicsQueue),
-        (_, None) => return Err(InitError::NoSurfaceSupport),
-        (Some(g), Some(p)) => (g, p),
-    };
+    let (gfx, present) = (&queue_families.graphics, &queue_families.present);
 
     let infos = if gfx.index == present.index {
         vec![vk::DeviceQueueCreateInfo {
@@ -215,17 +269,24 @@ fn create_infos_for_families(
 
     Ok(infos)
 }
-
 pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device, InitError> {
     let physical_devices = unsafe { instance.vk_instance.enumerate_physical_devices()? };
 
-    log_physical_devices(instance, &physical_devices);
-
     if physical_devices.is_empty() {
-        return Err(InitError::NoPhysicalDevice);
+        return Err(InitError::MissingPhysicalDevice);
     }
 
-    // The collect() create a Result<Vec<_>>, using the first Err it finds in the vector. Then ?
+    log_physical_devices(instance, &physical_devices);
+    let suitability_checks = physical_devices
+        .iter()
+        .map(|d| check_device_suitability(instance, d, surface))
+        .collect::<Result<Vec<DeviceSuitability>, InitError>>()?;
+
+    if !suitability_checks.iter().any(|c| c.is_suitable()) {
+        return Err(InitError::UnsuitableDevice(suitability_checks[0]));
+    }
+
+    // The collect() creates a Result<Vec<_>>, using the first Err it finds in the vector (if any). Then ?
     // does an early return if it is Err.
     let mut scored: Vec<(u32, vk::PhysicalDevice)> = physical_devices
         .iter()
@@ -239,7 +300,11 @@ pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device
     log::trace!("Choosing device:");
     log_device(instance, &vk_phys_device);
 
-    let queue_families = find_queue_families(instance, &vk_phys_device, surface)?;
+    let queue_families_query = find_queue_families(instance, &vk_phys_device, surface)?;
+
+    let queue_families: QueueFamilies = queue_families_query
+        .try_into()
+        .expect("This device should not have been chosen!");
 
     log::trace!("Choosing queue families:");
     log_queue_families(&queue_families);
@@ -267,10 +332,7 @@ pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device
 
     let _owned_layers = super::vec_cstring_from_raw(layers_ptrs);
     let _owned_extensions = super::vec_cstring_from_raw(extensions_ptrs);
-    let device = Device {
-        vk_device,
-        _parent_lifetime_token: instance.lifetime_token(),
-    };
+    let device = Device::new(vk_device, instance.lifetime_token());
 
     Ok(device)
 }
