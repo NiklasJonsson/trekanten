@@ -1,5 +1,4 @@
 use ash::extensions::ext;
-use ash::version::InstanceV1_0;
 use ash::vk;
 
 use std::ffi::CStr;
@@ -44,11 +43,9 @@ impl DebugUtils {
     }
 }
 
-const NULL_AS_STR: &str = "NULL";
-
 unsafe fn write_maybe_null(mut s: &mut String, p: *const c_char) {
     if p.is_null() {
-        write!(&mut s, "({})", "NULL").expect("vk_debug_callback failed to write");
+        write!(&mut s, "(NULL)").expect("vk_debug_callback failed to write");
     } else {
         write!(&mut s, "({:?})", CStr::from_ptr(p)).expect("vk_debug_callback failed to write");
     }
@@ -61,19 +58,21 @@ unsafe extern "system" fn vk_debug_callback(
     _user_data: *mut std::os::raw::c_void,
 ) -> vk::Bool32 {
     use vk::DebugUtilsMessageSeverityFlagsEXT as Severity;
-    use vk::DebugUtilsMessageTypeFlagsEXT as Type;
 
     let callback_data = *p_callback_data;
-    let p_null_str = NULL_AS_STR.as_ptr() as *const c_char;
 
     let mut message = String::new();
 
     write!(&mut message, "[{:?}]", message_type).expect("vk_debug_callback failed to write");
-    write!(&mut message, "[ID {}", callback_data.message_id_number)
-        .expect("vk_debug_callback failed to write");
+    write!(
+        &mut message,
+        "[ID {} ",
+        callback_data.message_id_number as u32
+    )
+    .expect("vk_debug_callback failed to write");
 
     write_maybe_null(&mut message, callback_data.p_message_id_name);
-    write!(&mut message, "]\n").expect("vk_debug_callback failed to write");
+    writeln!(&mut message, "]").expect("vk_debug_callback failed to write");
 
     write_maybe_null(&mut message, callback_data.p_message);
 
