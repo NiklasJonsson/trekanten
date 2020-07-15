@@ -1,6 +1,8 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use std::rc::Rc;
+
 use crate::instance::InitError;
 use crate::instance::Instance;
 use crate::queue::QueueFamilies;
@@ -10,19 +12,20 @@ use crate::util;
 use crate::util::lifetime::LifetimeToken;
 
 pub struct Device {
-    vk_device: ash::Device,
+    vk_device: Rc<ash::Device>,
     phys_device: vk::PhysicalDevice,
     queue_families: QueueFamilies,
-    lifetime_token: LifetimeToken<Self>,
     _parent_lifetime_token: LifetimeToken<Instance>,
 }
 
 impl std::ops::Drop for Device {
     fn drop(&mut self) {
-        if !self.lifetime_token.is_unique() {
-            // TODO: Can we assert/panic here?
-            log::error!("Device destroyed but there are still children alive!");
+        if !Rc::strong_count(&self.vk_device) == 1 {
+            log::error!(
+                "References to inner vk device still existing but Device is being destroyed!"
+            );
         }
+
         unsafe { self.vk_device.destroy_device(None) };
     }
 }
@@ -77,14 +80,18 @@ impl Device {
         parent_lifetime_token: LifetimeToken<Instance>,
     ) -> Self {
         Self {
-            vk_device,
+            vk_device: Rc::new(vk_device),
             phys_device,
             queue_families,
-            lifetime_token: LifetimeToken::<Self>::new(),
             _parent_lifetime_token: parent_lifetime_token,
         }
     }
 
+    pub fn inner_vk_device(&self) -> Rc<ash::Device> {
+        Rc::clone(&self.vk_device)
+    }
+
+    // TODO: Move this to swapchain?
     pub fn create_swapchain(
         &self,
         instance: &Instance,
@@ -134,11 +141,13 @@ impl Device {
             .old_swapchain(vk::SwapchainKHR::null())
             .build();
 
-        Ok(Swapchain::new(
-            instance,
-            &self.vk_device,
-            info,
-            self.lifetime_token.clone(),
-        )?)
+        Ok(Swapchain::new(instance, &self, info)?)
+    }
+
+    pub fn create_image_view(
+        &self,
+        info: &vk::ImageViewCreateInfo,
+    ) -> Result<vk::ImageView, InitError> {
+        Ok(unsafe { self.vk_device.create_image_view(info, None) }?)
     }
 }

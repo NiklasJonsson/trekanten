@@ -3,6 +3,7 @@ use glfw::{Action, Key};
 use instance::{InitError, Instance};
 
 mod device;
+mod image;
 mod instance;
 mod queue;
 mod surface;
