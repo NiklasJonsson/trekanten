@@ -233,11 +233,13 @@ fn create_infos_for_families(
     prio: &[f32],
 ) -> Result<Vec<vk::DeviceQueueCreateInfo>, InitError> {
     let (gfx, present) = (&queue_families.graphics, &queue_families.present);
+    let queue_count = prio.len() as u32;
 
     let infos = if gfx.index == present.index {
         vec![vk::DeviceQueueCreateInfo {
             queue_family_index: gfx.index,
             p_queue_priorities: prio.as_ptr(),
+            queue_count,
             ..Default::default()
         }]
     } else {
@@ -245,11 +247,13 @@ fn create_infos_for_families(
             vk::DeviceQueueCreateInfo {
                 queue_family_index: gfx.index,
                 p_queue_priorities: prio.as_ptr(),
+                queue_count,
                 ..Default::default()
             },
             vk::DeviceQueueCreateInfo {
                 queue_family_index: present.index,
                 p_queue_priorities: prio.as_ptr(),
+                queue_count,
                 ..Default::default()
             },
         ]

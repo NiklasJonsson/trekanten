@@ -75,6 +75,10 @@ fn choose_validation_layers(entry: &Entry) -> Vec<CString> {
             Err(_) => return Vec::new(),
         };
 
+        if layers.is_empty() {
+            log::trace!("Found no layers");
+        }
+
         for req in requested.iter() {
             let mut found = false;
             for layer in layers.iter() {
@@ -113,6 +117,7 @@ fn choose_instance_extensions<T: AsRef<str>>(
 
     // Glfw gives only the xcb surface extension but ash-window tries to create a xlibs surface.
     // Add the xlib one if, there is only a xcb surface extension.
+    // TODO: Move this up to application level
     if instance_extensions
         .iter()
         .any(|x| x.as_c_str() == ash::extensions::khr::XcbSurface::name())
