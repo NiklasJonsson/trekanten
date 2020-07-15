@@ -176,7 +176,7 @@ impl Instance {
         Ok(instance)
     }
 
-    fn lifetime_token(&self) -> LifetimeToken<Self> {
+    pub fn lifetime_token(&self) -> LifetimeToken<Self> {
         self.lifetime_token.clone()
     }
 
@@ -201,5 +201,9 @@ impl Instance {
 
     pub fn inner_vk_instance(&self) -> &ash::Instance {
         &self.vk_instance
+    }
+
+    pub fn entry(&self) -> &Entry {
+        &self.entry
     }
 }

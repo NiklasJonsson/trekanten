@@ -73,6 +73,9 @@ fn main() {
 
     let instance = Instance::new(&extensions).expect("Instance creation failed!");
 
+    let debug_utils =
+        util::vk_debug::DebugUtils::new(&instance).expect("Failed to create DebugUtils");
+
     let mut window = Window::new(glfw);
     let surface = instance
         .create_surface(&window.window)
