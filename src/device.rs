@@ -6,13 +6,11 @@ use std::rc::Rc;
 use crate::instance::InitError;
 use crate::instance::Instance;
 use crate::queue::QueueFamilies;
+use crate::queue::QueueFamily;
 use crate::surface::Surface;
 use crate::swapchain::Swapchain;
 use crate::util;
 use crate::util::lifetime::LifetimeToken;
-
-// TODO: Make Device implement ash::version::DeviceV1_0?
-// TODO: How to handle passing around inner types access but no leak ash types?
 
 pub type VkDevice = ash::Device;
 pub type VkDeviceHandle = Rc<ash::Device>;
@@ -160,5 +158,9 @@ impl Device {
             .build();
 
         Ok(Swapchain::new(instance, self, info)?)
+    }
+
+    pub fn graphics_queue_family(&self) -> &QueueFamily {
+        &self.queue_families.graphics
     }
 }

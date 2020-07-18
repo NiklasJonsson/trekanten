@@ -2,6 +2,7 @@ use glfw::{Action, Key};
 
 use instance::{InitError, Instance};
 
+mod command;
 mod device;
 mod framebuffer;
 mod image;
@@ -112,6 +113,13 @@ fn main() {
     let fbs = swapchain
         .create_framebuffers_for(&render_pass)
         .expect("Failed to create framebuffers");
+
+    let gfx_cmd_pool =
+        command::CommandPool::graphics(&device).expect("Failed to create graphics command pool");
+
+    let cmd_buffers = gfx_cmd_pool
+        .create_command_buffers(fbs.len() as u32)
+        .expect("Failed to create cmd buffers");
 
     while !window.window.should_close() {
         window.glfw.poll_events();
