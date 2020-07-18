@@ -58,8 +58,10 @@ impl Window {
     }
 }
 
+#[derive(Debug)]
 enum RenderError {
     InitError(InitError),
+    CommandBuffer(command::CommandBufferError),
 }
 
 impl From<InitError> for RenderError {
@@ -68,7 +70,20 @@ impl From<InitError> for RenderError {
     }
 }
 
-fn main() {
+impl From<command::CommandBufferError> for RenderError {
+    fn from(cbe: command::CommandBufferError) -> Self {
+        Self::CommandBuffer(cbe)
+    }
+}
+
+impl std::error::Error for RenderError {}
+impl std::fmt::Display for RenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+fn main() -> Result<(), RenderError> {
     env_logger::init();
     let glfw = glfw::init(glfw::FAIL_ON_ERRORS).expect("Failed to init glfw");
 
@@ -121,10 +136,28 @@ fn main() {
         .create_command_buffers(fbs.len() as u32)
         .expect("Failed to create cmd buffers");
 
+    let recorded_cmd_buffers = cmd_buffers
+        .into_iter()
+        .zip(fbs.iter())
+        .map(
+            |(cmd_buffer, fb)| -> Result<command::CommandBuffer, command::CommandBufferError> {
+                Ok(cmd_buffer
+                    .begin()?
+                    .begin_render_pass(&render_pass, &fb, swapchain.info().extent)
+                    .bind_gfx_pipeline(&g_pipeline)
+                    .draw(3, 1, 0, 0)
+                    .end_render_pass()
+                    .end()?)
+            },
+        )
+        .collect::<Result<Vec<_>, command::CommandBufferError>>()?;
+
     while !window.window.should_close() {
         window.glfw.poll_events();
         for (_, event) in glfw::flush_messages(&window.events) {
             handle_window_event(&mut window.window, event);
         }
     }
+
+    Ok(())
 }

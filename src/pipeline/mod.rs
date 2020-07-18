@@ -89,10 +89,24 @@ fn create_shader_module(
     Ok(vk_shader_module)
 }
 
+pub trait Pipeline {
+    const BIND_POINT: vk::PipelineBindPoint;
+
+    fn vk_pipeline(&self) -> &vk::Pipeline;
+}
+
 pub struct GraphicsPipeline {
     vk_device: Rc<VkDevice>,
     vk_pipeline_layout: vk::PipelineLayout,
     vk_pipeline: vk::Pipeline,
+}
+
+impl Pipeline for GraphicsPipeline {
+    const BIND_POINT: vk::PipelineBindPoint = vk::PipelineBindPoint::GRAPHICS;
+
+    fn vk_pipeline(&self) -> &vk::Pipeline {
+        &self.vk_pipeline
+    }
 }
 
 impl std::ops::Drop for GraphicsPipeline {
