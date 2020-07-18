@@ -5,7 +5,9 @@ use instance::{InitError, Instance};
 mod device;
 mod image;
 mod instance;
+mod pipeline;
 mod queue;
+mod render_pass;
 mod surface;
 mod swapchain;
 mod util;
@@ -84,7 +86,7 @@ fn main() {
 
     let device = instance
         .create_device(&surface)
-        .expect("Unable to create device!");
+        .expect("Unable to create device");
 
     // TODO: Move this function to instance?
     // It is techically a child of the device...
@@ -92,7 +94,19 @@ fn main() {
     // Should the device "consume" the instance?
     let swapchain = device
         .create_swapchain(&instance, &surface)
-        .expect("Unable to create swapchain!");
+        .expect("Unable to create swapchain");
+
+    let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)
+        .expect("Unable to create render pass");
+
+    let g_pipeline = pipeline::GraphicsPipeline::new(
+        &device,
+        swapchain.info().extent,
+        &render_pass,
+        "vert.spv",
+        "frag.spv",
+    )
+    .expect("Failed to create graphics pipeline");
 
     while !window.window.should_close() {
         window.glfw.poll_events();
