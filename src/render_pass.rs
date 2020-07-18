@@ -3,11 +3,13 @@ use ash::vk;
 
 use std::rc::Rc;
 
+use crate::device::AsVkDevice;
 use crate::device::Device;
+use crate::device::VkDevice;
 use crate::instance::InitError;
 
 pub struct RenderPass {
-    vk_device: Rc<ash::Device>,
+    vk_device: Rc<VkDevice>,
     vk_render_pass_handle: vk::RenderPass,
 }
 
@@ -49,7 +51,7 @@ impl RenderPass {
             .attachments(&attachments)
             .subpasses(&subpasses);
 
-        let vk_device = device.inner_vk_device();
+        let vk_device = device.vk_device();
 
         let vk_render_pass_handle =
             unsafe { vk_device.create_render_pass(&render_pass_info, None)? };

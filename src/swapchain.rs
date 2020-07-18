@@ -4,10 +4,13 @@ use ash::vk::SwapchainKHR as SwapchainHandle;
 
 use std::rc::Rc;
 
-use crate::device::Device;
+use crate::device::AsVkDevice;
+use crate::device::VkDevice;
+use crate::framebuffer::Framebuffer;
 use crate::image::{Image, ImageView};
 use crate::instance::InitError;
 use crate::instance::Instance;
+use crate::render_pass::RenderPass;
 use crate::util;
 
 pub struct SwapchainInfo {
@@ -22,7 +25,7 @@ pub struct Swapchain {
     images: Vec<Image>,
     image_views: Vec<ImageView>,
     info: SwapchainInfo,
-    vk_device: Rc<ash::Device>,
+    vk_device: Rc<VkDevice>,
 }
 
 impl std::ops::Drop for Swapchain {
@@ -32,13 +35,13 @@ impl std::ops::Drop for Swapchain {
 }
 
 impl Swapchain {
-    pub fn new(
+    pub fn new<D: AsVkDevice>(
         instance: &Instance,
-        device: &Device,
+        device: &D,
         info: vk::SwapchainCreateInfoKHR,
     ) -> Result<Self, InitError> {
         log::trace!("Creating swapchain: {:#?}", info);
-        let vk_device = device.inner_vk_device();
+        let vk_device = device.vk_device();
         // TODO: Can we handle this without have to expose this from the instance? Should the
         // function exist on the instance?
         let swapchain =
@@ -90,11 +93,24 @@ impl Swapchain {
             images,
             image_views,
             info: light_info,
-            vk_device: device.inner_vk_device(),
+            vk_device: device.vk_device(),
         })
     }
 
     pub fn info(&self) -> &SwapchainInfo {
         &self.info
+    }
+
+    pub fn create_framebuffers_for(
+        &self,
+        render_pass: &RenderPass,
+    ) -> Result<Vec<Framebuffer>, InitError> {
+        self.image_views
+            .iter()
+            .map(|iv| {
+                let views = [iv];
+                Framebuffer::new(&self.vk_device, &views, render_pass, &self.info.extent)
+            })
+            .collect::<Result<Vec<_>, InitError>>()
     }
 }

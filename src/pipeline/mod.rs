@@ -8,7 +8,9 @@ use std::io;
 use std::path::Path;
 use std::rc::Rc;
 
+use crate::device::AsVkDevice;
 use crate::device::Device;
+use crate::device::VkDevice;
 use crate::render_pass::RenderPass;
 use crate::util;
 
@@ -82,13 +84,13 @@ fn create_shader_module(
 ) -> Result<vk::ShaderModule, ShaderModuleError> {
     let info = vk::ShaderModuleCreateInfo::builder().code(&raw.data);
 
-    let vk_shader_module = unsafe { device.inner_vk_device().create_shader_module(&info, None) }?;
+    let vk_shader_module = unsafe { device.vk_device().create_shader_module(&info, None) }?;
 
     Ok(vk_shader_module)
 }
 
 pub struct GraphicsPipeline {
-    vk_device: Rc<ash::Device>,
+    vk_device: Rc<VkDevice>,
     vk_pipeline_layout: vk::PipelineLayout,
     vk_pipeline: vk::Pipeline,
 }
@@ -186,7 +188,7 @@ impl GraphicsPipeline {
 
         let pipeline_layout = unsafe {
             device
-                .inner_vk_device()
+                .vk_device()
                 .create_pipeline_layout(&pipeline_layout_info, None)
                 .map_err(PipelineError::PipelineLayoutCreation)?
         };
@@ -205,7 +207,7 @@ impl GraphicsPipeline {
 
         let create_infos = [*g_pipeline_info];
 
-        let vk_device = device.inner_vk_device();
+        let vk_device = device.vk_device();
 
         let vk_pipelines_result = unsafe {
             vk_device.create_graphics_pipelines(vk::PipelineCache::null(), &create_infos, None)

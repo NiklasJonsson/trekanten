@@ -11,11 +11,33 @@ use crate::swapchain::Swapchain;
 use crate::util;
 use crate::util::lifetime::LifetimeToken;
 
+// TODO: Make Device implement ash::version::DeviceV1_0?
+// TODO: How to handle passing around inner types access but no leak ash types?
+
+pub type VkDevice = ash::Device;
+pub type VkDeviceHandle = Rc<ash::Device>;
+
+pub trait AsVkDevice {
+    fn vk_device(&self) -> VkDeviceHandle;
+}
+
+impl AsVkDevice for VkDeviceHandle {
+    fn vk_device(&self) -> VkDeviceHandle {
+        Rc::clone(&self)
+    }
+}
+
 pub struct Device {
-    vk_device: Rc<ash::Device>,
+    vk_device: Rc<VkDevice>,
     phys_device: vk::PhysicalDevice,
     queue_families: QueueFamilies,
     _parent_lifetime_token: LifetimeToken<Instance>,
+}
+
+impl AsVkDevice for Device {
+    fn vk_device(&self) -> VkDeviceHandle {
+        Rc::clone(&self.vk_device)
+    }
 }
 
 impl std::ops::Drop for Device {
@@ -87,10 +109,6 @@ impl Device {
         }
     }
 
-    pub fn inner_vk_device(&self) -> Rc<ash::Device> {
-        Rc::clone(&self.vk_device)
-    }
-
     // TODO: Move this to swapchain?
     pub fn create_swapchain(
         &self,
@@ -141,13 +159,6 @@ impl Device {
             .old_swapchain(vk::SwapchainKHR::null())
             .build();
 
-        Ok(Swapchain::new(instance, &self, info)?)
-    }
-
-    pub fn create_image_view(
-        &self,
-        info: &vk::ImageViewCreateInfo,
-    ) -> Result<vk::ImageView, InitError> {
-        Ok(unsafe { self.vk_device.create_image_view(info, None) }?)
+        Ok(Swapchain::new(instance, self, info)?)
     }
 }

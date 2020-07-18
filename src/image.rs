@@ -3,7 +3,8 @@ use ash::vk;
 
 use std::rc::Rc;
 
-use crate::device::Device;
+use crate::device::AsVkDevice;
+use crate::device::VkDevice;
 use crate::instance::InitError;
 
 pub struct Image {
@@ -18,7 +19,7 @@ impl Image {
 
 pub struct ImageView {
     vk_image_view: vk::ImageView,
-    vk_device: Rc<ash::Device>,
+    vk_device: Rc<VkDevice>,
 }
 
 impl std::ops::Drop for ImageView {
@@ -30,8 +31,8 @@ impl std::ops::Drop for ImageView {
 }
 
 impl ImageView {
-    pub fn new(
-        device: &Device,
+    pub fn new<D: AsVkDevice>(
+        device: &D,
         image: &Image,
         format: vk::Format,
         component_mapping: vk::ComponentMapping,
@@ -44,11 +45,15 @@ impl ImageView {
             .components(component_mapping)
             .subresource_range(subresource_range);
 
-        let vk_image_view = device.create_image_view(&info)?;
+        let vk_image_view = unsafe { device.vk_device().create_image_view(&info, None)? };
 
         Ok(Self {
             vk_image_view,
-            vk_device: device.inner_vk_device(),
+            vk_device: device.vk_device(),
         })
+    }
+
+    pub fn inner_vk_image_view(&self) -> &vk::ImageView {
+        &self.vk_image_view
     }
 }

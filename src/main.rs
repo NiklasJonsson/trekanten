@@ -3,6 +3,7 @@ use glfw::{Action, Key};
 use instance::{InitError, Instance};
 
 mod device;
+mod framebuffer;
 mod image;
 mod instance;
 mod pipeline;
@@ -107,6 +108,10 @@ fn main() {
         "frag.spv",
     )
     .expect("Failed to create graphics pipeline");
+
+    let fbs = swapchain
+        .create_framebuffers_for(&render_pass)
+        .expect("Failed to create framebuffers");
 
     while !window.window.should_close() {
         window.glfw.poll_events();
