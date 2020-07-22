@@ -5,10 +5,11 @@ use std::rc::Rc;
 
 use crate::instance::InitError;
 use crate::instance::Instance;
+use crate::queue::Queue;
 use crate::queue::QueueFamilies;
 use crate::queue::QueueFamily;
 use crate::surface::Surface;
-use crate::swapchain::Swapchain;
+use crate::swapchain::{Swapchain, SwapchainError};
 use crate::util;
 use crate::util::lifetime::LifetimeToken;
 
@@ -25,10 +26,38 @@ impl AsVkDevice for VkDeviceHandle {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum DeviceError {
+    Init(InitError),
+    Swapchain(SwapchainError),
+    WaitIdle(vk::Result),
+}
+
+impl std::error::Error for DeviceError {}
+impl std::fmt::Display for DeviceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl From<InitError> for DeviceError {
+    fn from(e: InitError) -> Self {
+        Self::Init(e)
+    }
+}
+
+impl From<SwapchainError> for DeviceError {
+    fn from(e: SwapchainError) -> Self {
+        Self::Swapchain(e)
+    }
+}
+
 pub struct Device {
     vk_device: Rc<VkDevice>,
     phys_device: vk::PhysicalDevice,
     queue_families: QueueFamilies,
+    graphics_queue: Queue,
+    present_queue: Queue,
     _parent_lifetime_token: LifetimeToken<Instance>,
 }
 
@@ -99,10 +128,24 @@ impl Device {
         queue_families: QueueFamilies,
         parent_lifetime_token: LifetimeToken<Instance>,
     ) -> Self {
+        let vk_device = Rc::new(vk_device);
+
+        let (gfx, present) = unsafe {
+            (
+                vk_device.get_device_queue(queue_families.graphics.index, 0),
+                vk_device.get_device_queue(queue_families.graphics.index, 0),
+            )
+        };
+
+        let graphics_queue = Queue::new(Rc::clone(&vk_device), gfx);
+        let present_queue = Queue::new(Rc::clone(&vk_device), present);
+
         Self {
-            vk_device: Rc::new(vk_device),
+            vk_device,
             phys_device,
             queue_families,
+            graphics_queue,
+            present_queue,
             _parent_lifetime_token: parent_lifetime_token,
         }
     }
@@ -112,7 +155,7 @@ impl Device {
         &self,
         instance: &Instance,
         surface: &Surface,
-    ) -> Result<Swapchain, InitError> {
+    ) -> Result<Swapchain, DeviceError> {
         let query = surface.query_swapchain_support(&self.phys_device)?;
         log::trace!("Creating swapchain");
         log::trace!("Available: {:#?}", query);
@@ -162,5 +205,23 @@ impl Device {
 
     pub fn graphics_queue_family(&self) -> &QueueFamily {
         &self.queue_families.graphics
+    }
+
+    pub fn graphics_queue(&self) -> &Queue {
+        &self.graphics_queue
+    }
+
+    pub fn present_queue(&self) -> &Queue {
+        &self.present_queue
+    }
+
+    pub fn wait_idle(&self) -> Result<(), DeviceError> {
+        unsafe {
+            self.vk_device
+                .device_wait_idle()
+                .map_err(DeviceError::WaitIdle)?;
+        }
+
+        Ok(())
     }
 }

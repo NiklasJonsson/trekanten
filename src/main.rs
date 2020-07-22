@@ -1,5 +1,7 @@
 use glfw::{Action, Key};
 
+use ash::vk;
+
 use instance::{InitError, Instance};
 
 mod command;
@@ -12,6 +14,7 @@ mod queue;
 mod render_pass;
 mod surface;
 mod swapchain;
+mod sync;
 mod util;
 
 fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
@@ -83,6 +86,8 @@ impl std::fmt::Display for RenderError {
     }
 }
 
+const MAX_FRAMES_IN_FLIGHT: usize = 2;
+
 fn main() -> Result<(), RenderError> {
     env_logger::init();
     let glfw = glfw::init(glfw::FAIL_ON_ERRORS).expect("Failed to init glfw");
@@ -152,12 +157,85 @@ fn main() -> Result<(), RenderError> {
         )
         .collect::<Result<Vec<_>, command::CommandBufferError>>()?;
 
+    let image_avail_sem = (0..MAX_FRAMES_IN_FLIGHT)
+        .map(|_| sync::Semaphore::new(&device).expect("Failed to create semaphore"))
+        .collect::<Vec<_>>();
+    let render_done_sem = (0..MAX_FRAMES_IN_FLIGHT)
+        .map(|_| sync::Semaphore::new(&device).expect("Failed to create semaphore"))
+        .collect::<Vec<_>>();
+
+    let in_flight_fences = (0..MAX_FRAMES_IN_FLIGHT)
+        .map(|_| sync::Fence::new(&device).expect("Failed to create fence"))
+        .collect::<Vec<_>>();
+    let mut images_in_flight_fences: Vec<Option<usize>> = (0..fbs.len()).map(|_| None).collect();
+
+    let mut current_frame = 0;
+
     while !window.window.should_close() {
         window.glfw.poll_events();
         for (_, event) in glfw::flush_messages(&window.events) {
             handle_window_event(&mut window.window, event);
         }
+
+        in_flight_fences[current_frame]
+            .blocking_wait()
+            .expect("Failed to wait for fence");
+
+        let img_idx = swapchain
+            .acquire_next_image(Some(&image_avail_sem[current_frame]))
+            .expect("Failed to get swapchain image index");
+
+        if let Some(fence_idx) = images_in_flight_fences[img_idx as usize] {
+            in_flight_fences[fence_idx]
+                .blocking_wait()
+                .expect("Failed to wait");
+        }
+
+        images_in_flight_fences[img_idx as usize] = Some(current_frame);
+
+        let gfx_queue = device.graphics_queue();
+
+        // TODO: Get rid of the allocations below
+        let vk_wait_sems = [*image_avail_sem[current_frame].vk_semaphore()];
+
+        let wait_dst_mask = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+
+        let vk_sig_sems = [*render_done_sem[current_frame].vk_semaphore()];
+
+        let r_cmd_buffers = recorded_cmd_buffers
+            .iter()
+            .map(|cb| [*cb.vk_command_buffer()])
+            .collect::<Vec<_>>();
+
+        // TODO: Move this out of here
+        let info = vk::SubmitInfo::builder()
+            .wait_semaphores(&vk_wait_sems)
+            .wait_dst_stage_mask(&wait_dst_mask)
+            .signal_semaphores(&vk_sig_sems)
+            .command_buffers(&r_cmd_buffers[img_idx as usize]);
+
+        in_flight_fences[current_frame]
+            .reset()
+            .expect("Failed to reset fence");
+        gfx_queue
+            .submit(&info, &in_flight_fences[current_frame])
+            .expect("Failed to submit to queue");
+
+        let swapchains = [*swapchain.vk_swapchain()];
+        let indices = [img_idx];
+        let present_info = vk::PresentInfoKHR::builder()
+            .wait_semaphores(&vk_sig_sems)
+            .swapchains(&swapchains)
+            .image_indices(&indices);
+
+        swapchain
+            .enqueue_present(device.present_queue(), present_info.build())
+            .expect("Failed to submit present");
+
+        current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
+
+    device.wait_idle().expect("Failed to wait");
 
     Ok(())
 }

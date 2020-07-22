@@ -134,6 +134,10 @@ impl CommandBuffer {
         }
     }
 
+    pub fn vk_command_buffer(&self) -> &vk::CommandBuffer {
+        &self.vk_cmd_buffer
+    }
+
     pub fn begin(self) -> Result<Self, CommandBufferError> {
         let info = vk::CommandBufferBeginInfo {
             flags: vk::CommandBufferUsageFlags::empty(),

@@ -6,9 +6,20 @@ use std::rc::Rc;
 use crate::device::AsVkDevice;
 use crate::device::VkDevice;
 use crate::image::ImageView;
-use crate::instance::InitError;
 use crate::render_pass::RenderPass;
 use crate::util;
+
+#[derive(Debug, Clone)]
+pub enum FramebufferError {
+    Creation(vk::Result),
+}
+
+impl std::error::Error for FramebufferError {}
+impl std::fmt::Display for FramebufferError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 pub struct Framebuffer {
     vk_device: Rc<VkDevice>,
@@ -30,7 +41,7 @@ impl Framebuffer {
         attachments: &[&ImageView],
         render_pass: &RenderPass,
         extent: &util::Extent2D,
-    ) -> Result<Self, InitError> {
+    ) -> Result<Self, FramebufferError> {
         let vk_device = device.vk_device();
 
         let vk_attachments = attachments
@@ -45,7 +56,11 @@ impl Framebuffer {
             .height(extent.height)
             .layers(1);
 
-        let vk_framebuffer = unsafe { vk_device.create_framebuffer(&info, None)? };
+        let vk_framebuffer = unsafe {
+            vk_device
+                .create_framebuffer(&info, None)
+                .map_err(FramebufferError::Creation)?
+        };
 
         Ok(Self {
             vk_device,

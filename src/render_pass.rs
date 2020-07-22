@@ -47,9 +47,21 @@ impl RenderPass {
 
         let attachments = [*color_attach_format];
         let subpasses = [*subpass];
+
+        let subpass_dependency = vk::SubpassDependency::builder()
+            .src_subpass(vk::SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
+
+        let dependencies = [subpass_dependency.build()];
+
         let render_pass_info = vk::RenderPassCreateInfo::builder()
             .attachments(&attachments)
-            .subpasses(&subpasses);
+            .subpasses(&subpasses)
+            .dependencies(&dependencies);
 
         let vk_device = device.vk_device();
 
