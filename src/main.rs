@@ -102,8 +102,7 @@ fn main() -> Result<(), RenderError> {
         util::vk_debug::DebugUtils::new(&instance).expect("Failed to create DebugUtils");
 
     let mut window = Window::new(glfw);
-    let surface = instance
-        .create_surface(&window.window)
+    let surface = surface::Surface::new(&instance, &window.window)
         .expect("Failed to create surface");
 
     let device = device::Device::new(&instance, &surface).expect("Failed to create device");

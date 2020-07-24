@@ -1,12 +1,12 @@
-use ash::extensions::khr::Surface as KHRSurface;
+use ash::extensions::khr::Surface as SurfaceLoader;
 use ash::vk;
-use ash::vk::SurfaceKHR as SurfaceHandle;
 
 use crate::instance::Instance;
 use crate::util::lifetime::LifetimeToken;
 
 #[derive(Debug, Clone)]
 pub enum SurfaceError {
+    Creation(vk::Result),
     SupportQuery(vk::Result),
     CapabilitesQuery(vk::Result),
     FormatsQuery(vk::Result),
@@ -23,23 +23,25 @@ impl std::fmt::Display for SurfaceError {
 // TODO: Figure out better type naming:
 // KHR/Handle is confusing
 pub struct Surface {
-    handle: SurfaceHandle,
-    surface: KHRSurface,
+    handle: vk::SurfaceKHR,
+    loader: SurfaceLoader,
     _parent_lifetime_token: LifetimeToken<Instance>,
 }
 
 impl Surface {
-    pub fn new(
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        handle: SurfaceHandle,
-        parent_token: LifetimeToken<Instance>,
-    ) -> Self {
-        Self {
+    pub fn new<W: raw_window_handle::HasRawWindowHandle>(
+        instance: &Instance,
+        w: &W,
+    ) -> Result<Self, SurfaceError> {
+
+        let handle =
+            unsafe { ash_window::create_surface(instance.vk_entry(), instance.vk_instance(), w, None).map_err(SurfaceError::Creation) }?;
+
+        Ok(Self {
             handle,
-            surface: KHRSurface::new(entry, instance),
-            _parent_lifetime_token: parent_token,
-        }
+            loader: SurfaceLoader::new(instance.vk_entry(), instance.vk_instance()),
+            _parent_lifetime_token: instance.lifetime_token(),
+        })
     }
 
     pub fn is_supported_by(
@@ -47,8 +49,9 @@ impl Surface {
         phys_device: &vk::PhysicalDevice,
         queue_index: u32,
     ) -> Result<bool, SurfaceError> {
+
         unsafe {
-            self.surface
+            self.loader
                 .get_physical_device_surface_support(*phys_device, queue_index, self.handle)
                 .map_err(SurfaceError::SupportQuery)
         }
@@ -59,7 +62,7 @@ impl Surface {
         phys_device: &vk::PhysicalDevice,
     ) -> Result<vk::SurfaceCapabilitiesKHR, SurfaceError> {
         unsafe {
-            self.surface
+            self.loader
                 .get_physical_device_surface_capabilities(*phys_device, self.handle)
                 .map_err(SurfaceError::CapabilitesQuery)
         }
@@ -70,7 +73,7 @@ impl Surface {
         phys_device: &vk::PhysicalDevice,
     ) -> Result<Vec<vk::SurfaceFormatKHR>, SurfaceError> {
         unsafe {
-            self.surface
+            self.loader
                 .get_physical_device_surface_formats(*phys_device, self.handle)
                 .map_err(SurfaceError::FormatsQuery)
         }
@@ -81,7 +84,7 @@ impl Surface {
         phys_device: &vk::PhysicalDevice,
     ) -> Result<Vec<vk::PresentModeKHR>, SurfaceError> {
         unsafe {
-            self.surface
+            self.loader
                 .get_physical_device_surface_present_modes(*phys_device, self.handle)
                 .map_err(SurfaceError::PresentModesQuery)
         }
@@ -102,7 +105,7 @@ impl Surface {
         })
     }
 
-    pub fn vk_handle(&self) -> &SurfaceHandle {
+    pub fn vk_handle(&self) -> &vk::SurfaceKHR {
         &self.handle
     }
 }
@@ -117,7 +120,7 @@ pub struct SwapchainSupportDetails {
 impl std::ops::Drop for Surface {
     fn drop(&mut self) {
         unsafe {
-            self.surface.destroy_surface(self.handle, None);
+            self.loader.destroy_surface(self.handle, None);
         }
     }
 }

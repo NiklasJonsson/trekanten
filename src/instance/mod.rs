@@ -224,21 +224,6 @@ impl Instance {
         self.lifetime_token.clone()
     }
 
-    pub fn create_surface<W: raw_window_handle::HasRawWindowHandle>(
-        &self,
-        w: &W,
-    ) -> Result<Surface, InitError> {
-        let surface_khr =
-            unsafe { ash_window::create_surface(&self.entry, &self.vk_instance, w, None) }?;
-
-        Ok(Surface::new(
-            &self.entry,
-            &self.vk_instance,
-            surface_khr,
-            self.lifetime_token(),
-        ))
-    }
-
     pub fn vk_instance(&self) -> &ash::Instance {
         &self.vk_instance
     }
