@@ -102,8 +102,8 @@ fn main() -> Result<(), RenderError> {
         util::vk_debug::DebugUtils::new(&instance).expect("Failed to create DebugUtils");
 
     let mut window = Window::new(glfw);
-    let surface = surface::Surface::new(&instance, &window.window)
-        .expect("Failed to create surface");
+    let surface =
+        surface::Surface::new(&instance, &window.window).expect("Failed to create surface");
 
     let device = device::Device::new(&instance, &surface).expect("Failed to create device");
 
@@ -111,8 +111,7 @@ fn main() -> Result<(), RenderError> {
     // It is techically a child of the device...
     // Maybe the device should have a reference to instance?
     // Should the device "consume" the instance?
-    let swapchain = device
-        .create_swapchain(&instance, &surface)
+    let swapchain = swapchain::Swapchain::new(&instance, &device, &surface)
         .expect("Failed to create swapchain");
 
     let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)

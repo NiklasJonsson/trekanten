@@ -31,7 +31,6 @@ impl From<SurfaceError> for DeviceCreationError {
 pub enum DeviceError {
     Creation(DeviceCreationError),
     Swapchain(SwapchainError),
-    Surface(SurfaceError),
     WaitIdle(vk::Result),
 }
 
@@ -45,12 +44,6 @@ impl std::fmt::Display for DeviceError {
 impl From<SwapchainError> for DeviceError {
     fn from(e: SwapchainError) -> Self {
         Self::Swapchain(e)
-    }
-}
-
-impl From<SurfaceError> for DeviceError {
-    fn from(e: SurfaceError) -> Self {
-        Self::Surface(e)
     }
 }
 

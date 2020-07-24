@@ -4,12 +4,14 @@ use ash::vk;
 use std::rc::Rc;
 
 use crate::device::AsVkDevice;
+use crate::device::Device;
 use crate::device::VkDevice;
 use crate::framebuffer::{Framebuffer, FramebufferError};
 use crate::image::{Image, ImageView, ImageViewError};
 use crate::instance::Instance;
 use crate::queue::Queue;
 use crate::render_pass::RenderPass;
+use crate::surface::{Surface, SurfaceError};
 use crate::sync::Semaphore;
 use crate::util;
 
@@ -21,6 +23,7 @@ pub enum SwapchainError {
     FramebufferCreation(FramebufferError),
     AcquireNextImage(vk::Result),
     EnqueuePresent(vk::Result),
+    Surface(SurfaceError),
 }
 
 impl std::error::Error for SwapchainError {}
@@ -33,6 +36,12 @@ impl std::fmt::Display for SwapchainError {
 impl From<ImageViewError> for SwapchainError {
     fn from(e: ImageViewError) -> Self {
         Self::ImageViewCreation(e)
+    }
+}
+
+impl From<SurfaceError> for SwapchainError {
+    fn from(e: SurfaceError) -> Self {
+        Self::Surface(e)
     }
 }
 
@@ -64,13 +73,101 @@ impl std::ops::Drop for Swapchain {
     }
 }
 
+fn choose_swapchain_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
+    for f in formats.iter() {
+        if f.format == vk::Format::B8G8R8A8_SRGB
+            && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+        {
+            return *f;
+        }
+    }
+
+    formats[0]
+}
+
+fn choose_swapchain_surface_present_mode(pmodes: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
+    for pm in pmodes.iter() {
+        if *pm == vk::PresentModeKHR::MAILBOX {
+            return *pm;
+        }
+    }
+
+    // Always available according to spec
+    vk::PresentModeKHR::FIFO
+}
+
+fn choose_swapchain_extent(capabilites: &vk::SurfaceCapabilitiesKHR) -> vk::Extent2D {
+    if capabilites.current_extent.width != u32::MAX {
+        capabilites.current_extent
+    } else {
+        vk::Extent2D {
+            width: util::clamp(
+                super::WINDOW_WIDTH,
+                capabilites.min_image_extent.width,
+                capabilites.max_image_extent.width,
+            ),
+            height: util::clamp(
+                super::WINDOW_HEIGHT,
+                capabilites.min_image_extent.height,
+                capabilites.max_image_extent.height,
+            ),
+        }
+    }
+}
+
 impl Swapchain {
-    pub fn new<D: AsVkDevice>(
+    pub fn new(
         instance: &Instance,
-        device: &D,
-        info: vk::SwapchainCreateInfoKHR,
+        device: &Device,
+        surface: &Surface,
     ) -> Result<Self, SwapchainError> {
-        log::trace!("Creating swapchain: {:#?}", info);
+        let query = surface.query_swapchain_support(device.vk_phys_device())?;
+        log::trace!("Creating swapchain");
+        log::trace!("Available: {:#?}", query);
+        let format = choose_swapchain_surface_format(&query.formats);
+        let present_mode = choose_swapchain_surface_present_mode(&query.present_modes);
+        let extent = choose_swapchain_extent(&query.capabilites);
+
+        let mut image_count = query.capabilites.min_image_count + 1;
+        // Zero means no max
+        if query.capabilites.max_image_count > 0 && image_count > query.capabilites.max_image_count
+        {
+            image_count = query.capabilites.max_image_count;
+        }
+
+        let mut builder = vk::SwapchainCreateInfoKHR::builder()
+            .surface(*surface.vk_handle())
+            .min_image_count(image_count)
+            .image_format(format.format)
+            .image_color_space(format.color_space)
+            .image_extent(extent)
+            .image_array_layers(1)
+            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT);
+
+        let indices = [
+            device.graphics_queue_family().index,
+            device.present_queue_family().index,
+        ];
+        if indices[0] != indices[1] {
+            // TODO: CONCURRENT is suboptimal but easier
+            builder = builder
+                .image_sharing_mode(vk::SharingMode::CONCURRENT)
+                .queue_family_indices(&indices);
+        } else {
+            builder = builder
+                .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .queue_family_indices(&[]); // optional
+        }
+
+        let info = builder
+            .pre_transform(query.capabilites.current_transform)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(present_mode)
+            .clipped(true)
+            .old_swapchain(vk::SwapchainKHR::null())
+            .build();
+
+        log::trace!("Creating swapchain with info: {:#?}", info);
         let vk_device = device.vk_device();
         let loader = ash::extensions::khr::Swapchain::new(instance.vk_instance(), &*vk_device);
 

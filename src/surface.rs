@@ -33,9 +33,10 @@ impl Surface {
         instance: &Instance,
         w: &W,
     ) -> Result<Self, SurfaceError> {
-
-        let handle =
-            unsafe { ash_window::create_surface(instance.vk_entry(), instance.vk_instance(), w, None).map_err(SurfaceError::Creation) }?;
+        let handle = unsafe {
+            ash_window::create_surface(instance.vk_entry(), instance.vk_instance(), w, None)
+                .map_err(SurfaceError::Creation)
+        }?;
 
         Ok(Self {
             handle,
@@ -49,7 +50,6 @@ impl Surface {
         phys_device: &vk::PhysicalDevice,
         queue_index: u32,
     ) -> Result<bool, SurfaceError> {
-
         unsafe {
             self.loader
                 .get_physical_device_surface_support(*phys_device, queue_index, self.handle)
