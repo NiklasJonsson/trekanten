@@ -2,8 +2,6 @@ use glfw::{Action, Key};
 
 use ash::vk;
 
-use instance::{InitError, Instance};
-
 mod command;
 mod device;
 mod framebuffer;
@@ -63,14 +61,7 @@ impl Window {
 
 #[derive(Debug)]
 enum RenderError {
-    InitError(InitError),
     CommandBuffer(command::CommandBufferError),
-}
-
-impl From<InitError> for RenderError {
-    fn from(e: InitError) -> Self {
-        Self::InitError(e)
-    }
 }
 
 impl From<command::CommandBufferError> for RenderError {
@@ -96,7 +87,7 @@ fn main() -> Result<(), RenderError> {
         .get_required_instance_extensions()
         .expect("Could not get required instance extensions");
 
-    let instance = Instance::new(&extensions).expect("Instance creation failed!");
+    let instance = instance::Instance::new(&extensions).expect("Instance creation failed!");
 
     let debug_utils =
         util::vk_debug::DebugUtils::new(&instance).expect("Failed to create DebugUtils");

@@ -1,47 +1,45 @@
-use crate::surface::SurfaceError;
+use ash::vk;
+
+use std::ffi::CString;
 
 #[derive(Debug, Clone)]
-pub enum InitError {
-    CStrCreation(std::ffi::FromBytesWithNulError),
-    VkError(ash::vk::Result),
-    VkInstanceLoadError(Vec<&'static str>),
-    Surface(SurfaceError),
+pub enum InstanceCreationError {
+    Creation(vk::Result),
+    ExtensionEnumeration(vk::Result),
+    MissingExtension(CString),
+    LoadError(Vec<&'static str>),
 }
 
-impl std::error::Error for InitError {}
-impl std::fmt::Display for InitError {
+impl std::error::Error for InstanceCreationError {}
+impl std::fmt::Display for InstanceCreationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
-impl From<std::ffi::FromBytesWithNulError> for InitError {
-    fn from(e: std::ffi::FromBytesWithNulError) -> Self {
-        Self::CStrCreation(e)
-    }
-}
-
-impl From<ash::InstanceError> for InitError {
+impl From<ash::InstanceError> for InstanceCreationError {
     fn from(e: ash::InstanceError) -> Self {
         match e {
-            ash::InstanceError::VkError(r) => InitError::VkError(r),
-            ash::InstanceError::LoadError(v) => InitError::VkInstanceLoadError(v),
+            ash::InstanceError::VkError(r) => InstanceCreationError::Creation(r),
+            ash::InstanceError::LoadError(v) => InstanceCreationError::LoadError(v),
         }
     }
 }
 
-impl From<ash::vk::Result> for InitError {
-    fn from(e: ash::vk::Result) -> Self {
-        if e == ash::vk::Result::SUCCESS {
-            unreachable!("Did not expect success for error!");
-        } else {
-            Self::VkError(e)
-        }
+#[derive(Debug, Clone)]
+pub enum InstanceError {
+    Creation(InstanceCreationError),
+}
+
+impl std::error::Error for InstanceError {}
+impl std::fmt::Display for InstanceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
-impl From<SurfaceError> for InitError {
-    fn from(e: SurfaceError) -> Self {
-        Self::Surface(e)
+impl From<InstanceCreationError> for InstanceError {
+    fn from(e: InstanceCreationError) -> Self {
+        Self::Creation(e)
     }
 }

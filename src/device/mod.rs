@@ -8,7 +8,6 @@ use crate::queue::Queue;
 use crate::queue::QueueFamilies;
 use crate::queue::QueueFamily;
 use crate::surface::Surface;
-use crate::util;
 use crate::util::lifetime::LifetimeToken;
 
 mod device_selection;
