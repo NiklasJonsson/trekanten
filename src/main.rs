@@ -98,10 +98,6 @@ fn main() -> Result<(), RenderError> {
 
     let device = device::Device::new(&instance, &surface).expect("Failed to create device");
 
-    // TODO: Move this function to instance?
-    // It is techically a child of the device...
-    // Maybe the device should have a reference to instance?
-    // Should the device "consume" the instance?
     let swapchain = swapchain::Swapchain::new(&instance, &device, &surface)
         .expect("Failed to create swapchain");
 

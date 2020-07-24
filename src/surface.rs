@@ -20,8 +20,6 @@ impl std::fmt::Display for SurfaceError {
     }
 }
 
-// TODO: Figure out better type naming:
-// KHR/Handle is confusing
 pub struct Surface {
     handle: vk::SurfaceKHR,
     loader: SurfaceLoader,

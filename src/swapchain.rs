@@ -57,7 +57,6 @@ pub struct SwapchainInfo {
     pub extent: util::Extent2D,
 }
 
-// TODO: Cleanup Type names
 pub struct Swapchain {
     loader: SwapchainLoader,
     handle: vk::SwapchainKHR,
