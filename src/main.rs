@@ -104,11 +104,9 @@ fn main() -> Result<(), RenderError> {
     let mut window = Window::new(glfw);
     let surface = instance
         .create_surface(&window.window)
-        .expect("Unable to create surface");
+        .expect("Failed to create surface");
 
-    let device = instance
-        .create_device(&surface)
-        .expect("Unable to create device");
+    let device = device::Device::new(&instance, &surface).expect("Failed to create device");
 
     // TODO: Move this function to instance?
     // It is techically a child of the device...
@@ -116,10 +114,10 @@ fn main() -> Result<(), RenderError> {
     // Should the device "consume" the instance?
     let swapchain = device
         .create_swapchain(&instance, &surface)
-        .expect("Unable to create swapchain");
+        .expect("Failed to create swapchain");
 
     let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)
-        .expect("Unable to create render pass");
+        .expect("Failed to create render pass");
 
     let g_pipeline = pipeline::GraphicsPipeline::new(
         &device,

@@ -7,7 +7,6 @@ use crate::device::AsVkDevice;
 use crate::device::Device;
 use crate::device::VkDevice;
 use crate::framebuffer::Framebuffer;
-use crate::instance::InitError;
 use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::Pipeline;
 use crate::queue::QueueFamily;
@@ -16,7 +15,7 @@ use crate::util;
 
 #[derive(Debug)]
 pub enum CommandPoolError {
-    Init(InitError),
+    Creation(vk::Result),
     CommandBufferAlloc(vk::Result),
 }
 
@@ -24,12 +23,6 @@ impl std::error::Error for CommandPoolError {}
 impl std::fmt::Display for CommandPoolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
-    }
-}
-
-impl From<InitError> for CommandPoolError {
-    fn from(e: InitError) -> Self {
-        Self::Init(e)
     }
 }
 
@@ -62,7 +55,7 @@ impl CommandPool {
         let vk_command_pool = unsafe {
             vk_device
                 .create_command_pool(&info, None)
-                .map_err(InitError::from)?
+                .map_err(CommandPoolError::Creation)?
         };
 
         Ok(Self {

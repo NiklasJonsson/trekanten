@@ -3,15 +3,55 @@ use ash::version::InstanceV1_0; // For destroy_instance
 use ash::{version::EntryV1_0, vk, Entry};
 use std::ffi::{CStr, CString};
 
-use crate::device::Device;
 use crate::surface::Surface;
 use crate::util::ffi::*;
 use crate::util::lifetime::LifetimeToken;
 
-pub mod device_selection;
 pub mod error;
 
 pub use error::*;
+
+#[derive(Debug, Clone)]
+pub enum InstanceCreationError {
+    Creation(vk::Result),
+    ExtensionEnumeration(vk::Result),
+    MissingExtension(CString),
+    LoadError(Vec<&'static str>),
+}
+
+impl std::error::Error for InstanceCreationError {}
+impl std::fmt::Display for InstanceCreationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl From<ash::InstanceError> for InstanceCreationError {
+    fn from(e: ash::InstanceError) -> Self {
+        match e {
+            ash::InstanceError::VkError(r) => InstanceCreationError::Creation(r),
+            ash::InstanceError::LoadError(v) => InstanceCreationError::LoadError(v),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum InstanceError {
+    Creation(InstanceCreationError),
+}
+
+impl std::error::Error for InstanceError {}
+impl std::fmt::Display for InstanceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl From<InstanceCreationError> for InstanceError {
+    fn from(e: InstanceCreationError) -> Self {
+        Self::Creation(e)
+    }
+}
 
 pub struct Instance {
     entry: Entry,
@@ -34,7 +74,7 @@ impl Drop for Instance {
 fn check_extensions<T: AsRef<CStr>>(
     required: &[T],
     available: &[ash::vk::ExtensionProperties],
-) -> Result<(), InitError> {
+) -> Result<(), InstanceCreationError> {
     for req in required.iter() {
         let mut found = false;
         for avail in available.iter() {
@@ -47,7 +87,7 @@ fn check_extensions<T: AsRef<CStr>>(
 
         if !found {
             let c_string: CString = req.as_ref().to_owned();
-            return Err(InitError::MissingExtension(c_string));
+            return Err(InstanceCreationError::MissingExtension(c_string));
         }
     }
 
@@ -64,7 +104,7 @@ fn use_vk_validation() -> bool {
     std::env::var(DISABLE_VALIDATION_LAYERS_ENV_VAR).is_err()
 }
 
-fn choose_validation_layers(entry: &Entry) -> Vec<CString> {
+pub fn choose_validation_layers(entry: &Entry) -> Vec<CString> {
     if use_vk_validation() {
         let requested = validation_layers();
         log::trace!("Requested vk layers:");
@@ -105,8 +145,10 @@ fn choose_validation_layers(entry: &Entry) -> Vec<CString> {
 fn choose_instance_extensions<T: AsRef<str>>(
     entry: &Entry,
     required_window_extensions: &[T],
-) -> Result<Vec<CString>, InitError> {
-    let available = entry.enumerate_instance_extension_properties()?;
+) -> Result<Vec<CString>, InstanceCreationError> {
+    let available = entry
+        .enumerate_instance_extension_properties()
+        .map_err(InstanceCreationError::ExtensionEnumeration)?;
     let required = required_window_extensions
         .iter()
         .map(|x| CString::new(x.as_ref()).expect("CString failed!"))
@@ -139,7 +181,7 @@ fn choose_instance_extensions<T: AsRef<str>>(
 }
 
 impl Instance {
-    pub fn new<T: AsRef<str>>(required_window_extensions: &[T]) -> Result<Self, InitError> {
+    pub fn new<T: AsRef<str>>(required_window_extensions: &[T]) -> Result<Self, InstanceError> {
         let entry = Entry::new().expect("Failed to create Entry!");
 
         let app_info = vk::ApplicationInfo {
@@ -158,7 +200,11 @@ impl Instance {
             .enabled_extension_names(&extensions_ptrs)
             .enabled_layer_names(&layers_ptrs);
 
-        let vk_instance = unsafe { entry.create_instance(&create_info, None)? };
+        let vk_instance = unsafe {
+            entry
+                .create_instance(&create_info, None)
+                .map_err(InstanceCreationError::from)?
+        };
 
         let _owned_layers = vec_cstring_from_raw(layers_ptrs);
         let _owned_extensions = vec_cstring_from_raw(extensions_ptrs);
@@ -170,8 +216,6 @@ impl Instance {
             vk_instance,
             lifetime_token,
         };
-
-        // TODO: Setup debug callbacks to log
 
         Ok(instance)
     }
@@ -195,12 +239,12 @@ impl Instance {
         ))
     }
 
-    pub fn create_device(&self, surface: &Surface) -> Result<Device, InitError> {
-        device_selection::device_selection(self, surface)
+    pub fn vk_instance(&self) -> &ash::Instance {
+        &self.vk_instance
     }
 
-    pub fn inner_vk_instance(&self) -> &ash::Instance {
-        &self.vk_instance
+    pub fn vk_entry(&self) -> &ash::Entry {
+        &self.entry
     }
 
     pub fn entry(&self) -> &Entry {

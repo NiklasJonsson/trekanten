@@ -1,35 +1,17 @@
-use std::ffi::CString;
-
-use crate::instance::device_selection::DeviceSuitability;
+use crate::surface::SurfaceError;
 
 #[derive(Debug, Clone)]
 pub enum InitError {
-    MissingExtension(CString),
     CStrCreation(std::ffi::FromBytesWithNulError),
     VkError(ash::vk::Result),
     VkInstanceLoadError(Vec<&'static str>),
-    MissingPhysicalDevice,
-    UnsuitableDevice(DeviceSuitability),
+    Surface(SurfaceError),
 }
 
+impl std::error::Error for InitError {}
 impl std::fmt::Display for InitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            InitError::MissingExtension(c_string) => {
-                write!(f, "Extension required but not available: {:?}", c_string)
-            }
-            // TODO: Pretty errors
-            e => write!(f, "{:?}", e),
-        }
-    }
-}
-
-impl std::error::Error for InitError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            InitError::CStrCreation(e) => Some(e),
-            _ => None,
-        }
+        write!(f, "{:?}", self)
     }
 }
 
@@ -55,5 +37,11 @@ impl From<ash::vk::Result> for InitError {
         } else {
             Self::VkError(e)
         }
+    }
+}
+
+impl From<SurfaceError> for InitError {
+    fn from(e: SurfaceError) -> Self {
+        Self::Surface(e)
     }
 }

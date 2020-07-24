@@ -3,15 +3,19 @@ use ash::vk;
 
 use std::rc::Rc;
 
-use crate::instance::InitError;
 use crate::instance::Instance;
 use crate::queue::Queue;
 use crate::queue::QueueFamilies;
 use crate::queue::QueueFamily;
 use crate::surface::Surface;
-use crate::swapchain::{Swapchain, SwapchainError};
+use crate::swapchain::Swapchain;
 use crate::util;
 use crate::util::lifetime::LifetimeToken;
+
+mod device_selection;
+mod error;
+
+use error::DeviceError;
 
 pub type VkDevice = ash::Device;
 pub type VkDeviceHandle = Rc<ash::Device>;
@@ -26,35 +30,9 @@ impl AsVkDevice for VkDeviceHandle {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum DeviceError {
-    Init(InitError),
-    Swapchain(SwapchainError),
-    WaitIdle(vk::Result),
-}
-
-impl std::error::Error for DeviceError {}
-impl std::fmt::Display for DeviceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<InitError> for DeviceError {
-    fn from(e: InitError) -> Self {
-        Self::Init(e)
-    }
-}
-
-impl From<SwapchainError> for DeviceError {
-    fn from(e: SwapchainError) -> Self {
-        Self::Swapchain(e)
-    }
-}
-
 pub struct Device {
     vk_device: Rc<VkDevice>,
-    phys_device: vk::PhysicalDevice,
+    vk_phys_device: vk::PhysicalDevice,
     queue_families: QueueFamilies,
     graphics_queue: Queue,
     present_queue: Queue,
@@ -122,32 +100,30 @@ fn choose_swapchain_extent(capabilites: &vk::SurfaceCapabilitiesKHR) -> vk::Exte
 }
 
 impl Device {
-    pub fn new(
-        vk_device: ash::Device,
-        phys_device: vk::PhysicalDevice,
-        queue_families: QueueFamilies,
-        parent_lifetime_token: LifetimeToken<Instance>,
-    ) -> Self {
-        let vk_device = Rc::new(vk_device);
+    pub fn new(instance: &Instance, surface: &Surface) -> Result<Self, DeviceError> {
+        let (vk_device, vk_phys_device, queue_families) =
+            device_selection::device_selection(instance, surface)?;
 
         let (gfx, present) = unsafe {
             (
                 vk_device.get_device_queue(queue_families.graphics.index, 0),
-                vk_device.get_device_queue(queue_families.graphics.index, 0),
+                vk_device.get_device_queue(queue_families.present.index, 0),
             )
         };
+
+        let vk_device = Rc::new(vk_device);
 
         let graphics_queue = Queue::new(Rc::clone(&vk_device), gfx);
         let present_queue = Queue::new(Rc::clone(&vk_device), present);
 
-        Self {
+        Ok(Self {
             vk_device,
-            phys_device,
+            vk_phys_device,
             queue_families,
             graphics_queue,
             present_queue,
-            _parent_lifetime_token: parent_lifetime_token,
-        }
+            _parent_lifetime_token: instance.lifetime_token(),
+        })
     }
 
     // TODO: Move this to swapchain?
@@ -156,7 +132,7 @@ impl Device {
         instance: &Instance,
         surface: &Surface,
     ) -> Result<Swapchain, DeviceError> {
-        let query = surface.query_swapchain_support(&self.phys_device)?;
+        let query = surface.query_swapchain_support(&self.vk_phys_device)?;
         log::trace!("Creating swapchain");
         log::trace!("Available: {:#?}", query);
         let format = choose_swapchain_surface_format(&query.formats);

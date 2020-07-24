@@ -1,6 +1,5 @@
 use ash::extensions::khr::Swapchain as SwapchainLoader;
 use ash::vk;
-use ash::vk::SwapchainKHR;
 
 use std::rc::Rc;
 
@@ -73,8 +72,7 @@ impl Swapchain {
     ) -> Result<Self, SwapchainError> {
         log::trace!("Creating swapchain: {:#?}", info);
         let vk_device = device.vk_device();
-        let loader =
-            ash::extensions::khr::Swapchain::new(instance.inner_vk_instance(), &*vk_device);
+        let loader = ash::extensions::khr::Swapchain::new(instance.vk_instance(), &*vk_device);
 
         let handle = unsafe {
             loader
@@ -142,7 +140,7 @@ impl Swapchain {
     pub fn create_framebuffers_for(
         &self,
         render_pass: &RenderPass,
-    ) -> Result<Vec<Framebuffer>, FramebufferError> {
+    ) -> Result<Vec<Framebuffer>, SwapchainError> {
         self.image_views
             .iter()
             .map(|iv| {
@@ -150,12 +148,13 @@ impl Swapchain {
                 Framebuffer::new(&self.vk_device, &views, render_pass, &self.info.extent)
             })
             .collect::<Result<Vec<_>, FramebufferError>>()
+            .map_err(SwapchainError::FramebufferCreation)
     }
 
     pub fn acquire_next_image(&self, sem: Option<&Semaphore>) -> Result<u32, SwapchainError> {
         let s = sem
             .map(|x| *x.vk_semaphore())
-            .unwrap_or(vk::Semaphore::null());
+            .unwrap_or_else(vk::Semaphore::null);
         let f = vk::Fence::null();
         let result = unsafe {
             self.loader
@@ -163,10 +162,10 @@ impl Swapchain {
                 .map_err(SwapchainError::AcquireNextImage)?
         };
 
-        let (idx, optimal) = result;
+        let (idx, sub_optimal) = result;
 
-        if !optimal {
-            log::error!("Non-optimal swapchain!");
+        if sub_optimal {
+            log::error!("Suboptimal swapchain!");
         }
 
         Ok(idx)

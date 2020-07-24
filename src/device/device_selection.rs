@@ -6,16 +6,21 @@ use std::ffi::CString;
 
 use std::convert::{TryFrom, TryInto};
 
-use crate::device::Device;
-use crate::instance::InitError;
 use crate::instance::Instance;
 use crate::queue::{QueueFamilies, QueueFamily};
 use crate::surface::Surface;
+use crate::util;
+
+use super::error::DeviceCreationError;
 
 fn log_physical_devices(instance: &Instance, devices: &[ash::vk::PhysicalDevice]) {
     for device in devices.iter() {
         log::trace!("Found device: {:?}", device);
-        let props = unsafe { instance.vk_instance.get_physical_device_properties(*device) };
+        let props = unsafe {
+            instance
+                .vk_instance()
+                .get_physical_device_properties(*device)
+        };
         log::trace!("Properties: {:#?}", props);
     }
 }
@@ -23,7 +28,11 @@ fn log_physical_devices(instance: &Instance, devices: &[ash::vk::PhysicalDevice]
 fn log_device(instance: &Instance, device: &vk::PhysicalDevice) {
     log::trace!("Vk device: {:?}", device);
 
-    let props = unsafe { instance.vk_instance.get_physical_device_properties(*device) };
+    let props = unsafe {
+        instance
+            .vk_instance()
+            .get_physical_device_properties(*device)
+    };
     log::trace!("Properties:");
     log::trace!("\tvendor_id: {:?}", props.vendor_id);
     log::trace!("\tdevice_id: {:?}", props.device_id);
@@ -44,13 +53,13 @@ struct QueueFamiliesQuery {
 }
 
 impl TryFrom<QueueFamiliesQuery> for QueueFamilies {
-    type Error = InitError;
+    type Error = DeviceCreationError;
     fn try_from(v: QueueFamiliesQuery) -> Result<Self, Self::Error> {
         match (v.graphics, v.present) {
-            (None, _) => Err(InitError::UnsuitableDevice(
+            (None, _) => Err(DeviceCreationError::UnsuitableDevice(
                 DeviceSuitability::MissingGraphicsQueue,
             )),
-            (_, None) => Err(InitError::UnsuitableDevice(
+            (_, None) => Err(DeviceCreationError::UnsuitableDevice(
                 DeviceSuitability::MissingPresentQueue,
             )),
             (Some(graphics), Some(present)) => Ok(QueueFamilies { graphics, present }),
@@ -62,13 +71,13 @@ fn find_queue_families(
     instance: &Instance,
     device: &vk::PhysicalDevice,
     surface: &Surface,
-) -> Result<QueueFamiliesQuery, InitError> {
+) -> Result<QueueFamiliesQuery, DeviceCreationError> {
     log::trace!("Checking queues for:");
     log_device(instance, device);
 
     let queue_fam_props = unsafe {
         instance
-            .vk_instance
+            .vk_instance()
             .get_physical_device_queue_family_properties(*device)
     };
 
@@ -109,16 +118,18 @@ fn find_queue_families(
 
     Ok(families)
 }
+
 fn device_supports_extensions<T: AsRef<CStr>>(
     instance: &Instance,
     device: &vk::PhysicalDevice,
     required_extensions: &[T],
-) -> Result<bool, InitError> {
+) -> Result<bool, DeviceCreationError> {
     let available = unsafe {
         instance
-            .vk_instance
+            .vk_instance()
             .enumerate_device_extension_properties(*device)
-    }?;
+            .map_err(DeviceCreationError::ExtensionEnumeration)?
+    };
 
     for r in required_extensions.iter() {
         let mut found = false;
@@ -167,7 +178,7 @@ fn check_device_suitability(
     instance: &Instance,
     device: &vk::PhysicalDevice,
     surface: &Surface,
-) -> Result<DeviceSuitability, InitError> {
+) -> Result<DeviceSuitability, DeviceCreationError> {
     if !device_supports_extensions(instance, device, &required_device_extensions())? {
         return Ok(DeviceSuitability::MissingRequiredExtensions);
     }
@@ -199,8 +210,12 @@ fn score_device(
     instance: &Instance,
     device: &vk::PhysicalDevice,
     surface: &Surface,
-) -> Result<u32, InitError> {
-    let device_props = unsafe { instance.vk_instance.get_physical_device_properties(*device) };
+) -> Result<u32, DeviceCreationError> {
+    let device_props = unsafe {
+        instance
+            .vk_instance()
+            .get_physical_device_properties(*device)
+    };
 
     let mut score = 0;
 
@@ -231,7 +246,7 @@ fn log_queue_families(qfams: &QueueFamilies) {
 fn create_infos_for_families(
     queue_families: &QueueFamilies,
     prio: &[f32],
-) -> Result<Vec<vk::DeviceQueueCreateInfo>, InitError> {
+) -> Result<Vec<vk::DeviceQueueCreateInfo>, DeviceCreationError> {
     let (gfx, present) = (&queue_families.graphics, &queue_families.present);
     let queue_count = prio.len() as u32;
 
@@ -261,21 +276,29 @@ fn create_infos_for_families(
 
     Ok(infos)
 }
-pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device, InitError> {
-    let physical_devices = unsafe { instance.vk_instance.enumerate_physical_devices()? };
+pub fn device_selection(
+    instance: &Instance,
+    surface: &Surface,
+) -> Result<(ash::Device, vk::PhysicalDevice, QueueFamilies), DeviceCreationError> {
+    let physical_devices = unsafe {
+        instance
+            .vk_instance()
+            .enumerate_physical_devices()
+            .map_err(DeviceCreationError::PhysicalDeviceEnumeration)?
+    };
 
     if physical_devices.is_empty() {
-        return Err(InitError::MissingPhysicalDevice);
+        return Err(DeviceCreationError::MissingPhysicalDevice);
     }
 
     log_physical_devices(instance, &physical_devices);
     let suitability_checks = physical_devices
         .iter()
         .map(|d| check_device_suitability(instance, d, surface))
-        .collect::<Result<Vec<DeviceSuitability>, InitError>>()?;
+        .collect::<Result<Vec<DeviceSuitability>, DeviceCreationError>>()?;
 
     if !suitability_checks.iter().any(|c| c.is_suitable()) {
-        return Err(InitError::UnsuitableDevice(suitability_checks[0]));
+        return Err(DeviceCreationError::UnsuitableDevice(suitability_checks[0]));
     }
 
     // The collect() creates a Result<Vec<_>>, using the first Err it finds in the vector (if any). Then ?
@@ -283,7 +306,7 @@ pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device
     let mut scored: Vec<(u32, vk::PhysicalDevice)> = physical_devices
         .iter()
         .map(|d| score_device(instance, d, surface).map(|s| (s, *d)))
-        .collect::<Result<Vec<_>, InitError>>()?;
+        .collect::<Result<Vec<_>, DeviceCreationError>>()?;
 
     // Note that switched args. Higher score should be earlier
     scored.sort_by(|a, b| b.0.cmp(&a.0));
@@ -305,11 +328,11 @@ pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device
     let queue_infos = create_infos_for_families(&queue_families, &prio)?;
 
     // TODO: Cleanup handling layers together with instance
-    let validation_layers = super::choose_validation_layers(&instance.entry);
-    let layers_ptrs = super::vec_cstring_to_raw(validation_layers);
+    let validation_layers = crate::instance::choose_validation_layers(instance.vk_entry());
+    let layers_ptrs = util::ffi::vec_cstring_to_raw(validation_layers);
 
     let extensions = required_device_extensions();
-    let extensions_ptrs = super::vec_cstring_to_raw(extensions);
+    let extensions_ptrs = util::ffi::vec_cstring_to_raw(extensions);
 
     let device_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_infos)
@@ -318,18 +341,13 @@ pub fn device_selection(instance: &Instance, surface: &Surface) -> Result<Device
 
     let vk_device = unsafe {
         instance
-            .vk_instance
+            .vk_instance()
             .create_device(vk_phys_device, &device_info, None)
-    }?;
+            .map_err(DeviceCreationError::Creation)?
+    };
 
-    let _owned_layers = super::vec_cstring_from_raw(layers_ptrs);
-    let _owned_extensions = super::vec_cstring_from_raw(extensions_ptrs);
-    let device = Device::new(
-        vk_device,
-        vk_phys_device,
-        queue_families,
-        instance.lifetime_token(),
-    );
+    let _owned_layers = util::ffi::vec_cstring_from_raw(layers_ptrs);
+    let _owned_extensions = util::ffi::vec_cstring_from_raw(extensions_ptrs);
 
-    Ok(device)
+    Ok((vk_device, vk_phys_device, queue_families))
 }

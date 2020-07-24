@@ -8,7 +8,7 @@ use crate::device::VkDevice;
 
 #[derive(Debug, Copy, Clone)]
 pub enum SemaphoreError {
-    Init(vk::Result),
+    Creation(vk::Result),
 }
 
 impl std::error::Error for SemaphoreError {}
@@ -40,7 +40,7 @@ impl Semaphore {
         let vk_semaphore = unsafe {
             vk_device
                 .create_semaphore(&info, None)
-                .map_err(SemaphoreError::Init)?
+                .map_err(SemaphoreError::Creation)?
         };
 
         Ok(Self {
@@ -56,7 +56,7 @@ impl Semaphore {
 
 #[derive(Debug, Copy, Clone)]
 pub enum FenceError {
-    Init(vk::Result),
+    Creation(vk::Result),
     Await(vk::Result),
     Reset(vk::Result),
 }
@@ -93,7 +93,7 @@ impl Fence {
         let vk_fence = unsafe {
             vk_device
                 .create_fence(&info, None)
-                .map_err(FenceError::Init)?
+                .map_err(FenceError::Creation)?
         };
 
         Ok(Self {

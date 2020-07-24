@@ -6,7 +6,18 @@ use std::rc::Rc;
 use crate::device::AsVkDevice;
 use crate::device::Device;
 use crate::device::VkDevice;
-use crate::instance::InitError;
+
+#[derive(Clone, Debug)]
+pub enum RenderPassError {
+    Creation(vk::Result),
+}
+
+impl std::error::Error for RenderPassError {}
+impl std::fmt::Display for RenderPassError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 pub struct RenderPass {
     vk_device: Rc<VkDevice>,
@@ -23,7 +34,7 @@ impl std::ops::Drop for RenderPass {
 }
 
 impl RenderPass {
-    pub fn new(device: &Device, format: vk::Format) -> Result<Self, InitError> {
+    pub fn new(device: &Device, format: vk::Format) -> Result<Self, RenderPassError> {
         let color_attach_format = vk::AttachmentDescription::builder()
             .format(format)
             .samples(vk::SampleCountFlags::TYPE_1)
@@ -65,8 +76,11 @@ impl RenderPass {
 
         let vk_device = device.vk_device();
 
-        let vk_render_pass_handle =
-            unsafe { vk_device.create_render_pass(&render_pass_info, None)? };
+        let vk_render_pass_handle = unsafe {
+            vk_device
+                .create_render_pass(&render_pass_info, None)
+                .map_err(RenderPassError::Creation)?
+        };
 
         Ok(Self {
             vk_device,

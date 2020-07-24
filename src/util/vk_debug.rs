@@ -5,9 +5,20 @@ use std::ffi::CStr;
 use std::fmt::Write;
 use std::os::raw::c_char;
 
-use crate::instance::InitError;
 use crate::instance::Instance;
 use crate::util::lifetime::LifetimeToken;
+
+#[derive(Debug, Clone)]
+pub enum DebugUtilsError {
+    Creation(vk::Result),
+}
+
+impl std::error::Error for DebugUtilsError {}
+impl std::fmt::Display for DebugUtilsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 pub struct DebugUtils {
     loader: ext::DebugUtils,
@@ -25,15 +36,19 @@ impl Drop for DebugUtils {
 }
 
 impl DebugUtils {
-    pub fn new(instance: &Instance) -> Result<Self, InitError> {
-        let loader = ext::DebugUtils::new(instance.entry(), instance.inner_vk_instance());
+    pub fn new(instance: &Instance) -> Result<Self, DebugUtilsError> {
+        let loader = ext::DebugUtils::new(instance.entry(), instance.vk_instance());
 
         let info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
             .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::all())
             .message_type(vk::DebugUtilsMessageTypeFlagsEXT::all())
             .pfn_user_callback(Some(vk_debug_callback));
 
-        let callback_handle = unsafe { loader.create_debug_utils_messenger(&info, None) }?;
+        let callback_handle = unsafe {
+            loader
+                .create_debug_utils_messenger(&info, None)
+                .map_err(DebugUtilsError::Creation)?
+        };
 
         Ok(Self {
             loader,

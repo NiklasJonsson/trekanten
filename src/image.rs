@@ -5,7 +5,6 @@ use std::rc::Rc;
 
 use crate::device::AsVkDevice;
 use crate::device::VkDevice;
-use crate::instance::InitError;
 
 pub struct Image {
     vk_image: vk::Image,
