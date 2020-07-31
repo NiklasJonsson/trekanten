@@ -17,12 +17,19 @@ use crate::util;
 pub enum CommandPoolError {
     Creation(vk::Result),
     CommandBufferAlloc(vk::Result),
+    CommandBuffer(CommandBufferError),
 }
 
 impl std::error::Error for CommandPoolError {}
 impl std::fmt::Display for CommandPoolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<CommandBufferError> for CommandPoolError {
+    fn from(e: CommandBufferError) -> Self {
+        Self::CommandBuffer(e)
     }
 }
 
@@ -65,6 +72,12 @@ impl CommandPool {
         })
     }
 
+    pub fn create_command_buffer(&self) -> Result<CommandBuffer, CommandPoolError> {
+        let mut r = self.create_command_buffers(1)?;
+        debug_assert_eq!(r.len(), 1);
+        Ok(r.remove(0))
+    }
+
     pub fn create_command_buffers(
         &self,
         amount: u32,
@@ -74,22 +87,22 @@ impl CommandPool {
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_buffer_count(amount);
 
-        Ok(unsafe {
+        let allocated = unsafe {
             self.vk_device
                 .allocate_command_buffers(&info)
-                .map(|vec| {
-                    vec.into_iter()
-                        .map(|vk_cmd_buf| {
-                            CommandBuffer::new(
-                                Rc::clone(&self.vk_device),
-                                vk_cmd_buf,
-                                self.queue_family.props.queue_flags,
-                            )
-                        })
-                        .collect::<Vec<CommandBuffer>>()
-                })
                 .map_err(CommandPoolError::CommandBufferAlloc)?
-        })
+        };
+
+        Ok(allocated
+            .into_iter()
+            .map(|vk_cmd_buf| {
+                CommandBuffer::new(
+                    Rc::clone(&self.vk_device),
+                    vk_cmd_buf,
+                    self.queue_family.props.queue_flags,
+                )
+            })
+            .collect::<Vec<CommandBuffer>>())
     }
 }
 
@@ -108,6 +121,7 @@ impl std::fmt::Display for CommandBufferError {
 
 // TODO: That we have to call all of these through a device means that might mean that we can't
 // "easily" record command buffers on other threads?
+// TODO: Builder pattern?
 pub struct CommandBuffer {
     queue_flags: vk::QueueFlags,
     vk_cmd_buffer: vk::CommandBuffer,
@@ -127,8 +141,8 @@ impl CommandBuffer {
         }
     }
 
-    pub fn vk_command_buffer(&self) -> &vk::CommandBuffer {
-        &self.vk_cmd_buffer
+    pub fn vk_command_buffer(self) -> vk::CommandBuffer {
+        self.vk_cmd_buffer
     }
 
     pub fn begin(self) -> Result<Self, CommandBufferError> {

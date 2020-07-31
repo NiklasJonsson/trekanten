@@ -95,18 +95,21 @@ fn choose_swapchain_surface_present_mode(pmodes: &[vk::PresentModeKHR]) -> vk::P
     vk::PresentModeKHR::FIFO
 }
 
-fn choose_swapchain_extent(capabilites: &vk::SurfaceCapabilitiesKHR) -> vk::Extent2D {
+fn choose_swapchain_extent(
+    capabilites: &vk::SurfaceCapabilitiesKHR,
+    extent: &util::Extent2D,
+) -> vk::Extent2D {
     if capabilites.current_extent.width != u32::MAX {
         capabilites.current_extent
     } else {
         vk::Extent2D {
             width: util::clamp(
-                super::WINDOW_WIDTH,
+                extent.width,
                 capabilites.min_image_extent.width,
                 capabilites.max_image_extent.width,
             ),
             height: util::clamp(
-                super::WINDOW_HEIGHT,
+                extent.height,
                 capabilites.min_image_extent.height,
                 capabilites.max_image_extent.height,
             ),
@@ -119,13 +122,14 @@ impl Swapchain {
         instance: &Instance,
         device: &Device,
         surface: &Surface,
+        extent: &util::Extent2D,
     ) -> Result<Self, SwapchainError> {
         let query = surface.query_swapchain_support(device.vk_phys_device())?;
         log::trace!("Creating swapchain");
         log::trace!("Available: {:#?}", query);
         let format = choose_swapchain_surface_format(&query.formats);
         let present_mode = choose_swapchain_surface_present_mode(&query.present_modes);
-        let extent = choose_swapchain_extent(&query.capabilites);
+        let extent = choose_swapchain_extent(&query.capabilites, extent);
 
         let mut image_count = query.capabilites.min_image_count + 1;
         // Zero means no max
@@ -233,6 +237,7 @@ impl Swapchain {
         &self.info
     }
 
+    // TODO: Does this really belong here?
     pub fn create_framebuffers_for(
         &self,
         render_pass: &RenderPass,
@@ -287,5 +292,10 @@ impl Swapchain {
         } else {
             Ok(SwapchainStatus::Optimal)
         }
+    }
+
+    pub fn num_images(&self) -> usize {
+        assert_eq!(self.images.len(), self.image_views.len());
+        self.images.len()
     }
 }

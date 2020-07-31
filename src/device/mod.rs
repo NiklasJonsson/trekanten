@@ -13,7 +13,7 @@ use crate::util::lifetime::LifetimeToken;
 mod device_selection;
 mod error;
 
-use error::DeviceError;
+pub use error::DeviceError;
 
 pub type VkDevice = ash::Device;
 pub type VkDeviceHandle = Rc<ash::Device>;
