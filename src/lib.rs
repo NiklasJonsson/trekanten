@@ -13,6 +13,7 @@ mod surface;
 mod swapchain;
 mod sync;
 mod util;
+pub mod window;
 
 pub use error::RenderError;
 
@@ -126,13 +127,54 @@ impl std::ops::Drop for Renderer {
     }
 }
 
+// Result holder struct
+struct SwapchainAndCo {
+    swapchain: swapchain::Swapchain,
+    swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
+    image_to_frame_idx: Vec<Option<u32>>,
+    render_pass: render_pass::RenderPass,
+    // TODO: Change to dynamic viewport and we don't have to recompile
+    gfx_pipeline: pipeline::GraphicsPipeline,
+}
+
+fn create_swapchain_and_co(
+    instance: &instance::Instance,
+    device: &device::Device,
+    surface: &surface::Surface,
+    extent: &util::Extent2D,
+    _old: Option<&swapchain::Swapchain>,
+) -> Result<SwapchainAndCo, RenderError> {
+    let swapchain = swapchain::Swapchain::new(&instance, &device, &surface, &extent)?;
+    let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)?;
+
+    let image_to_frame_idx: Vec<Option<u32>> = (0..swapchain.num_images()).map(|_| None).collect();
+    let gfx_pipeline = pipeline::GraphicsPipeline::new(
+        &device,
+        swapchain.info().extent,
+        &render_pass,
+        "vert.spv",
+        "frag.spv",
+    )?;
+
+    let swapchain_framebuffers = swapchain.create_framebuffers_for(&render_pass)?;
+
+    Ok(SwapchainAndCo {
+        swapchain,
+        swapchain_framebuffers,
+        image_to_frame_idx,
+        render_pass,
+        gfx_pipeline,
+    })
+}
+
 impl Renderer {
-    pub fn new<T, W>(required_window_extensions: &[T], window: &W) -> Result<Self, RenderError>
+    pub fn new<W>(window: &W) -> Result<Self, RenderError>
     where
-        W: raw_window_handle::HasRawWindowHandle,
-        T: AsRef<str>,
+        W: raw_window_handle::HasRawWindowHandle + window::Window,
     {
-        let instance = instance::Instance::new(required_window_extensions)?;
+        let extensions = window.required_instance_extensions();
+
+        let instance = instance::Instance::new(&extensions)?;
         let _debug_utils = util::vk_debug::DebugUtils::new(&instance)?;
         let surface = surface::Surface::new(&instance, window)?;
         let device = device::Device::new(&instance, &surface)?;
@@ -142,27 +184,19 @@ impl Renderer {
             height: WINDOW_HEIGHT,
         };
 
-        let swapchain = swapchain::Swapchain::new(&instance, &device, &surface, &extent)?;
-        let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)?;
+        let SwapchainAndCo {
+            swapchain,
+            swapchain_framebuffers,
+            image_to_frame_idx,
+            render_pass,
+            gfx_pipeline,
+        } = create_swapchain_and_co(&instance, &device, &surface, &extent, None)?;
 
-        let gfx_pipeline = pipeline::GraphicsPipeline::new(
-            &device,
-            swapchain.info().extent,
-            &render_pass,
-            "vert.spv",
-            "frag.spv",
-        )?;
-
-        let swapchain_framebuffers = swapchain.create_framebuffers_for(&render_pass)?;
+        let frames = [None, None];
         let frame_synchronization = [
             FrameSynchronization::new(&device)?,
             FrameSynchronization::new(&device)?,
         ];
-
-        let frames = [None, None];
-
-        let image_to_frame_idx: Vec<Option<u32>> =
-            (0..swapchain.num_images()).map(|_| None).collect();
 
         Ok(Self {
             instance,
@@ -187,7 +221,14 @@ impl Renderer {
 
         self.swapchain_image_idx = self
             .swapchain
-            .acquire_next_image(Some(&frame_sync.image_available))?;
+            .acquire_next_image(Some(&frame_sync.image_available))
+            .map_err(|e| {
+                if let swapchain::SwapchainError::OutOfDate = e {
+                    RenderError::NeedsResize
+                } else {
+                    RenderError::Swapchain(e)
+                }
+            })?;
 
         // This means that we received an image that might be in the process of rendering
         if let Some(frame_idx) = self.image_to_frame_idx[self.swapchain_image_idx as usize] {
@@ -213,6 +254,13 @@ impl Renderer {
 
     pub fn submit(&mut self, frame: Frame) -> Result<(), RenderError> {
         assert_eq!(frame.frame_idx, self.frame_idx, "Mismatching frame indexes");
+
+        // Make sure that this is captured before any early returns. If this function returns
+        // without having extended the lifetime of frame, it might be dropped while it's command
+        // buffers are still in use.
+        self.frames[self.frame_idx as usize] = Some(frame);
+        let frame = self.frames[self.frame_idx as usize].as_ref().unwrap();
+
         let frame_sync = &self.frame_synchronization[self.frame_idx as usize];
         let vk_wait_sems = [*frame_sync.image_available.vk_semaphore()];
         let wait_dst_mask = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -236,10 +284,20 @@ impl Renderer {
             .swapchains(&swapchains)
             .image_indices(&indices);
 
-        self.swapchain
-            .enqueue_present(self.device.present_queue(), present_info.build())?;
+        let status = self
+            .swapchain
+            .enqueue_present(self.device.present_queue(), present_info.build())
+            .map_err(|e| {
+                if let swapchain::SwapchainError::OutOfDate = e {
+                    RenderError::NeedsResize
+                } else {
+                    RenderError::Swapchain(e)
+                }
+            })?;
 
-        self.frames[self.frame_idx as usize] = Some(frame);
+        if let swapchain::SwapchainStatus::SubOptimal = status {
+            return Err(RenderError::NeedsResize);
+        }
 
         self.frame_idx = (self.frame_idx + 1) % MAX_FRAMES_IN_FLIGHT;
 
@@ -260,5 +318,31 @@ impl Renderer {
 
     pub fn framebuffer(&self, frame: &Frame) -> &framebuffer::Framebuffer {
         &self.swapchain_framebuffers[frame.swapchain_image_idx as usize]
+    }
+
+    pub fn resize(&mut self, new_extent: util::Extent2D) -> Result<(), RenderError> {
+        self.device.wait_idle()?;
+
+        let SwapchainAndCo {
+            swapchain,
+            swapchain_framebuffers,
+            image_to_frame_idx,
+            render_pass,
+            gfx_pipeline,
+        } = create_swapchain_and_co(
+            &self.instance,
+            &self.device,
+            &self.surface,
+            &new_extent,
+            Some(&self.swapchain),
+        )?;
+
+        self.swapchain = swapchain;
+        self.swapchain_framebuffers = swapchain_framebuffers;
+        self.image_to_frame_idx = image_to_frame_idx;
+        self.render_pass = render_pass;
+        self.gfx_pipeline = gfx_pipeline;
+
+        Ok(())
     }
 }

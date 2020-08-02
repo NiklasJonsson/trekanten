@@ -24,6 +24,7 @@ pub enum SwapchainError {
     AcquireNextImage(vk::Result),
     EnqueuePresent(vk::Result),
     Surface(SurfaceError),
+    OutOfDate,
 }
 
 impl std::error::Error for SwapchainError {}
@@ -257,16 +258,18 @@ impl Swapchain {
             .map(|x| *x.vk_semaphore())
             .unwrap_or_else(vk::Semaphore::null);
         let f = vk::Fence::null();
-        let result = unsafe {
-            self.loader
-                .acquire_next_image(self.handle, u64::MAX, s, f)
-                .map_err(SwapchainError::AcquireNextImage)?
-        };
+        let result = unsafe { self.loader.acquire_next_image(self.handle, u64::MAX, s, f) };
 
-        let (idx, sub_optimal) = result;
+        let (idx, sub_optimal) = result.map_err(|e| {
+            if e == vk::Result::ERROR_OUT_OF_DATE_KHR {
+                SwapchainError::OutOfDate
+            } else {
+                SwapchainError::AcquireNextImage(e)
+            }
+        })?;
 
         if sub_optimal {
-            log::error!("Suboptimal swapchain!");
+            log::warn!("Suboptimal swapchain!");
         }
 
         Ok(idx)
@@ -281,13 +284,17 @@ impl Swapchain {
         queue: &Queue,
         info: vk::PresentInfoKHR,
     ) -> Result<SwapchainStatus, SwapchainError> {
-        let suboptimal = unsafe {
-            self.loader
-                .queue_present(*queue.vk_queue(), &info)
-                .map_err(SwapchainError::EnqueuePresent)?
-        };
+        let present_result = unsafe { self.loader.queue_present(*queue.vk_queue(), &info) };
 
-        if suboptimal {
+        let sub_optimal = present_result.map_err(|e| {
+            if e == vk::Result::ERROR_OUT_OF_DATE_KHR {
+                SwapchainError::OutOfDate
+            } else {
+                SwapchainError::EnqueuePresent(e)
+            }
+        })?;
+
+        if sub_optimal {
             Ok(SwapchainStatus::SubOptimal)
         } else {
             Ok(SwapchainStatus::Optimal)

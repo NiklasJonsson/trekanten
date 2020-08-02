@@ -14,6 +14,7 @@ pub enum RenderError {
     Frame(crate::FrameSynchronizationError),
     Fence(sync::FenceError),
     Queue(queue::QueueError),
+    NeedsResize,
 }
 
 impl std::error::Error for RenderError {}

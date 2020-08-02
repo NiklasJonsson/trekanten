@@ -1,6 +1,6 @@
 use glfw::{Action, Key};
 
-use trekanten::*;
+use trekanten::window::Window;
 
 fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
     match event {
@@ -9,53 +9,11 @@ fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
     }
 }
 
-pub const WINDOW_HEIGHT: u32 = 300;
-pub const WINDOW_WIDTH: u32 = 300;
-const WINDOW_TITLE: &str = "Vulkan";
-
-type WindowEvents = std::sync::mpsc::Receiver<(f64, glfw::WindowEvent)>;
-
-pub struct Window {
-    glfw: glfw::Glfw,
-    window: glfw::Window,
-    events: WindowEvents,
-}
-
-impl Window {
-    pub fn new(mut glfw: glfw::Glfw) -> Self {
-        assert!(glfw.vulkan_supported(), "No vulkan!");
-
-        glfw.window_hint(glfw::WindowHint::ClientApi(glfw::ClientApiHint::NoApi));
-
-        let (mut window, events) = glfw
-            .create_window(
-                WINDOW_WIDTH,
-                WINDOW_HEIGHT,
-                WINDOW_TITLE,
-                glfw::WindowMode::Windowed,
-            )
-            .expect("Failed to create GLFW window.");
-
-        window.set_key_polling(true);
-
-        Self {
-            glfw,
-            window,
-            events,
-        }
-    }
-}
-
-fn main() -> Result<(), RenderError> {
+fn main() -> Result<(), trekanten::RenderError> {
     env_logger::init();
-    let glfw = glfw::init(glfw::FAIL_ON_ERRORS).expect("Failed to init glfw");
 
-    let extensions = glfw
-        .get_required_instance_extensions()
-        .expect("Could not get required instance extensions");
-
-    let mut window = Window::new(glfw);
-    let mut renderer = trekanten::Renderer::new(&extensions, &window.window)?;
+    let mut window = trekanten::window::GlfwWindow::new();
+    let mut renderer = trekanten::Renderer::new(&window)?;
 
     while !window.window.should_close() {
         window.glfw.poll_events();
@@ -63,7 +21,13 @@ fn main() -> Result<(), RenderError> {
             handle_window_event(&mut window.window, event);
         }
 
-        let mut frame = renderer.next_frame()?;
+        let mut frame = match renderer.next_frame() {
+            Err(trekanten::RenderError::NeedsResize) => {
+                renderer.resize(window.extents())?;
+                renderer.next_frame()
+            }
+            x => x,
+        }?;
 
         let render_pass = renderer.render_pass();
         let gfx_pipeline = renderer.gfx_pipeline();
@@ -81,7 +45,13 @@ fn main() -> Result<(), RenderError> {
 
         frame.add_command_buffer(cmd_buf);
 
-        renderer.submit(frame)?;
+        renderer.submit(frame).or_else(|e| {
+            if let trekanten::RenderError::NeedsResize = e {
+                renderer.resize(window.extents())
+            } else {
+                Err(e)
+            }
+        })?;
     }
 
     Ok(())
