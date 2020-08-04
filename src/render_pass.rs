@@ -21,14 +21,14 @@ impl std::fmt::Display for RenderPassError {
 
 pub struct RenderPass {
     vk_device: Rc<VkDevice>,
-    vk_render_pass_handle: vk::RenderPass,
+    vk_render_pass: vk::RenderPass,
 }
 
 impl std::ops::Drop for RenderPass {
     fn drop(&mut self) {
         unsafe {
             self.vk_device
-                .destroy_render_pass(self.vk_render_pass_handle, None);
+                .destroy_render_pass(self.vk_render_pass, None);
         }
     }
 }
@@ -76,7 +76,7 @@ impl RenderPass {
 
         let vk_device = device.vk_device();
 
-        let vk_render_pass_handle = unsafe {
+        let vk_render_pass = unsafe {
             vk_device
                 .create_render_pass(&render_pass_info, None)
                 .map_err(RenderPassError::Creation)?
@@ -84,11 +84,11 @@ impl RenderPass {
 
         Ok(Self {
             vk_device,
-            vk_render_pass_handle,
+            vk_render_pass,
         })
     }
 
-    pub fn inner_vk_render_pass(&self) -> &vk::RenderPass {
-        &self.vk_render_pass_handle
+    pub fn vk_render_pass(&self) -> &vk::RenderPass {
+        &self.vk_render_pass
     }
 }

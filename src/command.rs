@@ -11,6 +11,7 @@ use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::Pipeline;
 use crate::queue::QueueFamily;
 use crate::render_pass::RenderPass;
+use crate::material::Material;
 use crate::util;
 
 #[derive(Debug)]
@@ -182,8 +183,8 @@ impl CommandBuffer {
         }];
 
         let info = vk::RenderPassBeginInfo::builder()
-            .render_pass(*render_pass.inner_vk_render_pass())
-            .framebuffer(*framebuffer.inner_vk_framebuffer())
+            .render_pass(*render_pass.vk_render_pass())
+            .framebuffer(*framebuffer.vk_framebuffer())
             .render_area(vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: extent.into(),
@@ -209,14 +210,14 @@ impl CommandBuffer {
         self
     }
 
-    pub fn bind_gfx_pipeline(self, pipeline: &GraphicsPipeline) -> Self {
-        // TODO: Verify queue family here
+    pub fn bind_material(self, material: &Material) -> Self {
+        assert!(self.queue_flags.contains(vk::QueueFlags::GRAPHICS));
 
         unsafe {
             self.vk_device.cmd_bind_pipeline(
                 self.vk_cmd_buffer,
                 GraphicsPipeline::BIND_POINT,
-                *pipeline.vk_pipeline(),
+                *material.pipeline().vk_pipeline(),
             );
         }
 

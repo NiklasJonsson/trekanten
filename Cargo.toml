@@ -11,7 +11,12 @@ ash = "0.31.0"
 ash-window = "0.4.1"
 raw-window-handle = "0.3.3"
 glfw = {version = "0.39.0", features = ["vulkan"]}
+
+# Math
 nalgebra-glm = "0.7.0"
+
+# Mem
+memoffset = "0.5.5"
 
 # Util
 log = "0.4.8"

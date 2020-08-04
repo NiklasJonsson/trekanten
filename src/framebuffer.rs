@@ -50,7 +50,7 @@ impl Framebuffer {
             .collect::<Vec<_>>();
 
         let info = vk::FramebufferCreateInfo::builder()
-            .render_pass(*render_pass.inner_vk_render_pass())
+            .render_pass(*render_pass.vk_render_pass())
             .attachments(&vk_attachments)
             .width(extent.width)
             .height(extent.height)
@@ -68,7 +68,7 @@ impl Framebuffer {
         })
     }
 
-    pub fn inner_vk_framebuffer(&self) -> &vk::Framebuffer {
+    pub fn vk_framebuffer(&self) -> &vk::Framebuffer {
         &self.vk_framebuffer
     }
 }

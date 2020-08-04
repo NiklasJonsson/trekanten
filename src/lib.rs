@@ -13,7 +13,10 @@ mod surface;
 mod swapchain;
 mod sync;
 mod util;
+mod resource;
+pub mod material;
 pub mod window;
+pub mod vertex;
 
 pub use error::RenderError;
 
@@ -100,7 +103,7 @@ pub struct Renderer {
     // TODO: Could render pass be a abstracted as forward-renderer?
     render_pass: render_pass::RenderPass,
     swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
-    gfx_pipeline: pipeline::GraphicsPipeline,
+    materials: resource::Storage<material::Material>,
 
     swapchain: swapchain::Swapchain,
     swapchain_image_idx: u32, // TODO: Bake this into the swapchain?
@@ -133,8 +136,6 @@ struct SwapchainAndCo {
     swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
     image_to_frame_idx: Vec<Option<u32>>,
     render_pass: render_pass::RenderPass,
-    // TODO: Change to dynamic viewport and we don't have to recompile
-    gfx_pipeline: pipeline::GraphicsPipeline,
 }
 
 fn create_swapchain_and_co(
@@ -148,22 +149,13 @@ fn create_swapchain_and_co(
     let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)?;
 
     let image_to_frame_idx: Vec<Option<u32>> = (0..swapchain.num_images()).map(|_| None).collect();
-    let gfx_pipeline = pipeline::GraphicsPipeline::new(
-        &device,
-        swapchain.info().extent,
-        &render_pass,
-        "vert.spv",
-        "frag.spv",
-    )?;
-
-    let swapchain_framebuffers = swapchain.create_framebuffers_for(&render_pass)?;
+      let swapchain_framebuffers = swapchain.create_framebuffers_for(&render_pass)?;
 
     Ok(SwapchainAndCo {
         swapchain,
         swapchain_framebuffers,
         image_to_frame_idx,
         render_pass,
-        gfx_pipeline,
     })
 }
 
@@ -189,7 +181,6 @@ impl Renderer {
             swapchain_framebuffers,
             image_to_frame_idx,
             render_pass,
-            gfx_pipeline,
         } = create_swapchain_and_co(&instance, &device, &surface, &extent, None)?;
 
         let frames = [None, None];
@@ -206,12 +197,12 @@ impl Renderer {
             image_to_frame_idx,
             render_pass,
             swapchain_framebuffers,
-            gfx_pipeline,
             frame_synchronization,
             frame_idx: 0,
             frames,
             swapchain_image_idx: 0,
             _debug_utils,
+            materials: resource::Storage::<material::Material>::new(),
         })
     }
 
@@ -308,16 +299,16 @@ impl Renderer {
         &self.render_pass
     }
 
-    pub fn gfx_pipeline(&self) -> &pipeline::GraphicsPipeline {
-        &self.gfx_pipeline
-    }
-
     pub fn swapchain_extent(&self) -> util::Extent2D {
         self.swapchain.info().extent
     }
 
     pub fn framebuffer(&self, frame: &Frame) -> &framebuffer::Framebuffer {
         &self.swapchain_framebuffers[frame.swapchain_image_idx as usize]
+    }
+
+    fn recreate_pipelines(&mut self) -> Result<(), RenderError> {
+        unimplemented!()
     }
 
     pub fn resize(&mut self, new_extent: util::Extent2D) -> Result<(), RenderError> {
@@ -328,7 +319,6 @@ impl Renderer {
             swapchain_framebuffers,
             image_to_frame_idx,
             render_pass,
-            gfx_pipeline,
         } = create_swapchain_and_co(
             &self.instance,
             &self.device,
@@ -341,8 +331,17 @@ impl Renderer {
         self.swapchain_framebuffers = swapchain_framebuffers;
         self.image_to_frame_idx = image_to_frame_idx;
         self.render_pass = render_pass;
-        self.gfx_pipeline = gfx_pipeline;
+
+        self.recreate_pipelines()?;
 
         Ok(())
+    }
+
+    pub fn create_material(&self, info: material::MaterialDescriptor) -> material::MaterialHandle {
+        unimplemented!()
+    }
+
+    pub fn get_material(&self, handle: &material::MaterialHandle) -> &material::Material {
+        unimplemented!()
     }
 }
