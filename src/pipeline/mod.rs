@@ -11,8 +11,8 @@ use crate::device::AsVkDevice;
 use crate::device::Device;
 use crate::device::VkDevice;
 use crate::render_pass::RenderPass;
-use crate::vertex::VertexDescription;
 use crate::util;
+use crate::vertex::VertexDefinition;
 
 #[derive(Debug)]
 pub enum ShaderModuleError {
@@ -93,23 +93,24 @@ struct ShaderModule {
 impl std::ops::Drop for ShaderModule {
     fn drop(&mut self) {
         unsafe {
-            self.vk_device.destroy_shader_module(self.vk_shader_module, None);
+            self.vk_device
+                .destroy_shader_module(self.vk_shader_module, None);
         }
     }
 }
 
 impl ShaderModule {
     pub fn new(device: &Device, raw: &RawShader) -> Result<Self, ShaderModuleError> {
-      let info = vk::ShaderModuleCreateInfo::builder().code(&raw.data);
+        let info = vk::ShaderModuleCreateInfo::builder().code(&raw.data);
 
-      let vk_device = device.vk_device();
+        let vk_device = device.vk_device();
 
-    let vk_shader_module = unsafe { vk_device.create_shader_module(&info, None) }?;
+        let vk_shader_module = unsafe { vk_device.create_shader_module(&info, None) }?;
 
-    Ok(Self{
-        vk_device,
-        vk_shader_module,
-    })
+        Ok(Self {
+            vk_device,
+            vk_shader_module,
+        })
     }
 }
 
@@ -154,9 +155,9 @@ struct PipelineCreationInfo {
     shader_module: ShaderModule,
 }
 
-struct VertexInputInfo {
-    binding_description: Vec<vk::VertexInputBindingDescription>,
-    attribute_description: Vec<vk::VertexInputAttributeDescription>,
+struct VertexInputDescription<'a> {
+    binding_description: &'a [vk::VertexInputBindingDescription],
+    attribute_description: &'a [vk::VertexInputAttributeDescription],
     create_info: vk::PipelineVertexInputStateCreateInfo,
 }
 
@@ -181,7 +182,7 @@ pub struct GraphicsPipelineBuilder<'a> {
     entry_name: CString,
     vert: Option<PipelineCreationInfo>,
     frag: Option<PipelineCreationInfo>,
-    vertex_input: Option<VertexInputInfo>,
+    vertex_input: Option<VertexInputDescription<'a>>,
     viewport_state: Option<vk::PipelineViewportStateCreateInfo>,
     render_pass: Option<&'a RenderPass>,
 }
@@ -200,7 +201,11 @@ impl<'a> GraphicsPipelineBuilder<'a> {
         }
     }
 
-    fn shader<P: AsRef<Path>>(&mut self, path: P, stage: vk::ShaderStageFlags) -> Result<PipelineCreationInfo, PipelineError> {
+    fn shader<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        stage: vk::ShaderStageFlags,
+    ) -> Result<PipelineCreationInfo, PipelineError> {
         let raw = read_shader_rel(path)?;
         let shader_module = ShaderModule::new(self.device, &raw)?;
         let create_info = vk::PipelineShaderStageCreateInfo::builder()
@@ -225,19 +230,17 @@ impl<'a> GraphicsPipelineBuilder<'a> {
         Ok(self)
     }
 
-    pub fn vertex_type<V>(mut self) -> Self
-        where
-            V: VertexDescription,
-    {
-        let attribute_description = V::attribute_description();
-        let binding_description = V::binding_description();
-
+    pub fn vertex_input(
+        mut self,
+        attribute_description: &'a [vk::VertexInputAttributeDescription],
+        binding_description: &'a [vk::VertexInputBindingDescription],
+    ) -> Self {
         let create_info = vk::PipelineVertexInputStateCreateInfo::builder()
             .vertex_binding_descriptions(&binding_description)
             .vertex_attribute_descriptions(&attribute_description)
             .build();
 
-        self.vertex_input = Some(VertexInputInfo {
+        self.vertex_input = Some(VertexInputDescription {
             attribute_description,
             binding_description,
             create_info,
@@ -246,17 +249,16 @@ impl<'a> GraphicsPipelineBuilder<'a> {
         self
     }
 
-    pub fn viewport(mut self, viewport_extent: util::Extent2D) -> Self {
+    pub fn viewport_extent(mut self, extent: util::Extent2D) -> Self {
         let viewport = vk::Viewport::builder()
             .x(0.0)
             .y(0.0)
-            .width(viewport_extent.width as f32)
-            .height(viewport_extent.height as f32)
+            .width(extent.width as f32)
+            .height(extent.height as f32)
             .min_depth(0.0)
             .max_depth(1.0);
 
-
-          let scissor_extent: vk::Extent2D = viewport_extent.into();
+        let scissor_extent: vk::Extent2D = extent.into();
 
         let scissor = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
@@ -271,18 +273,27 @@ impl<'a> GraphicsPipelineBuilder<'a> {
 
         self.viewport_state = Some(viewport_state_info.build());
         self
-    } 
- 
+    }
+
     pub fn render_pass(mut self, render_pass: &'a RenderPass) -> Self {
         self.render_pass = Some(render_pass);
         self
     }
+
     pub fn build(self) -> Result<GraphicsPipeline, PipelineError> {
         let vert = self.vert.ok_or(PipelineBuilderError::MissingVertexShader)?;
-        let frag = self.frag.ok_or(PipelineBuilderError::MissingFragmentShader)?;
-        let vertex_input = self.vertex_input.ok_or(PipelineBuilderError::MissingVertexDescription)?;
-        let viewport_state = self.viewport_state.ok_or(PipelineBuilderError::MissingViewportState)?;
-        let render_pass = self.render_pass.ok_or(PipelineBuilderError::MissingRenderPass)?;
+        let frag = self
+            .frag
+            .ok_or(PipelineBuilderError::MissingFragmentShader)?;
+        let vertex_input = self
+            .vertex_input
+            .ok_or(PipelineBuilderError::MissingVertexDescription)?;
+        let viewport_state = self
+            .viewport_state
+            .ok_or(PipelineBuilderError::MissingViewportState)?;
+        let render_pass = self
+            .render_pass
+            .ok_or(PipelineBuilderError::MissingRenderPass)?;
 
         let vk_device = self.device.vk_device();
         let stages = [vert.create_info, frag.create_info];
@@ -316,7 +327,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
 
         let pipeline_layout = unsafe {
-                vk_device
+            vk_device
                 .create_pipeline_layout(&pipeline_layout_info, None)
                 .map_err(PipelineError::PipelineLayoutCreation)?
         };
@@ -335,7 +346,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
 
         let create_infos = [*g_pipeline_info];
 
-
+        // TODO: Use the cache
         let vk_pipelines_result = unsafe {
             vk_device.create_graphics_pipelines(vk::PipelineCache::null(), &create_infos, None)
         };
@@ -354,7 +365,5 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             vk_pipeline,
             vk_pipeline_layout: pipeline_layout,
         })
-
     }
 }
-

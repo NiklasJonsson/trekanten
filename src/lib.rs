@@ -6,17 +6,18 @@ mod error;
 mod framebuffer;
 mod image;
 mod instance;
+pub mod material;
+mod mem;
 mod pipeline;
 mod queue;
 mod render_pass;
+mod resource;
 mod surface;
 mod swapchain;
 mod sync;
 mod util;
-mod resource;
-pub mod material;
-pub mod window;
 pub mod vertex;
+pub mod window;
 
 pub use error::RenderError;
 
@@ -103,7 +104,7 @@ pub struct Renderer {
     // TODO: Could render pass be a abstracted as forward-renderer?
     render_pass: render_pass::RenderPass,
     swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
-    materials: resource::Storage<material::Material>,
+    materials: material::Materials,
 
     swapchain: swapchain::Swapchain,
     swapchain_image_idx: u32, // TODO: Bake this into the swapchain?
@@ -149,7 +150,7 @@ fn create_swapchain_and_co(
     let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)?;
 
     let image_to_frame_idx: Vec<Option<u32>> = (0..swapchain.num_images()).map(|_| None).collect();
-      let swapchain_framebuffers = swapchain.create_framebuffers_for(&render_pass)?;
+    let swapchain_framebuffers = swapchain.create_framebuffers_for(&render_pass)?;
 
     Ok(SwapchainAndCo {
         swapchain,
@@ -202,7 +203,7 @@ impl Renderer {
             frames,
             swapchain_image_idx: 0,
             _debug_utils,
-            materials: resource::Storage::<material::Material>::new(),
+            materials: material::Materials::new(),
         })
     }
 
@@ -308,7 +309,9 @@ impl Renderer {
     }
 
     fn recreate_pipelines(&mut self) -> Result<(), RenderError> {
-        unimplemented!()
+        self.materials
+            .recreate_all(&self.device, self.swapchain_extent(), &self.render_pass)?;
+        Ok(())
     }
 
     pub fn resize(&mut self, new_extent: util::Extent2D) -> Result<(), RenderError> {
@@ -337,11 +340,31 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn create_material(&self, info: material::MaterialDescriptor) -> material::MaterialHandle {
-        unimplemented!()
+    pub fn create_material(
+        &mut self,
+        descriptor: material::MaterialDescriptor,
+    ) -> Result<resource::Handle<material::Material>, RenderError> {
+        let h = self.materials.create(
+            &self.device,
+            descriptor,
+            self.swapchain_extent(),
+            &self.render_pass,
+        )?;
+        Ok(h)
     }
 
-    pub fn get_material(&self, handle: &material::MaterialHandle) -> &material::Material {
-        unimplemented!()
+    pub fn get_material(
+        &self,
+        handle: &resource::Handle<material::Material>,
+    ) -> Option<&material::Material> {
+        self.materials.get(handle)
+    }
+
+    pub fn vertex_buffer_from_slice<V>(
+        &self,
+        slice: &[V],
+    ) -> Result<vertex::VertexBuffer, RenderError> {
+        let r = vertex::VertexBuffer::from_slice(&self.device, slice)?;
+        Ok(r)
     }
 }

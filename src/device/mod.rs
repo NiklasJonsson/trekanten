@@ -1,4 +1,5 @@
 use ash::version::DeviceV1_0;
+use ash::version::InstanceV1_0;
 use ash::vk;
 
 use std::rc::Rc;
@@ -35,6 +36,7 @@ pub struct Device {
     graphics_queue: Queue,
     present_queue: Queue,
     _parent_lifetime_token: LifetimeToken<Instance>,
+    memory_properties: vk::PhysicalDeviceMemoryProperties,
 }
 
 impl AsVkDevice for Device {
@@ -45,6 +47,7 @@ impl AsVkDevice for Device {
 
 impl std::ops::Drop for Device {
     fn drop(&mut self) {
+        // TODO: Change to weak
         if !Rc::strong_count(&self.vk_device) == 1 {
             log::error!(
                 "References to inner vk device still existing but Device is being destroyed!"
@@ -72,6 +75,12 @@ impl Device {
         let graphics_queue = Queue::new(Rc::clone(&vk_device), gfx);
         let present_queue = Queue::new(Rc::clone(&vk_device), present);
 
+        let memory_properties = unsafe {
+            instance
+                .vk_instance()
+                .get_physical_device_memory_properties(vk_phys_device)
+        };
+
         Ok(Self {
             vk_device,
             vk_phys_device,
@@ -79,6 +88,7 @@ impl Device {
             graphics_queue,
             present_queue,
             _parent_lifetime_token: instance.lifetime_token(),
+            memory_properties,
         })
     }
 
@@ -110,5 +120,9 @@ impl Device {
 
     pub fn vk_phys_device(&self) -> &vk::PhysicalDevice {
         &self.vk_phys_device
+    }
+
+    pub fn memory_properties(&self) -> &vk::PhysicalDeviceMemoryProperties {
+        &self.memory_properties
     }
 }

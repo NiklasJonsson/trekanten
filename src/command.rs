@@ -7,12 +7,13 @@ use crate::device::AsVkDevice;
 use crate::device::Device;
 use crate::device::VkDevice;
 use crate::framebuffer::Framebuffer;
+use crate::material::Material;
 use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::Pipeline;
 use crate::queue::QueueFamily;
 use crate::render_pass::RenderPass;
-use crate::material::Material;
 use crate::util;
+use crate::vertex::VertexBuffer;
 
 #[derive(Debug)]
 pub enum CommandPoolError {
@@ -224,6 +225,21 @@ impl CommandBuffer {
         self
     }
 
+    pub fn bind_vertex_buffer(self, buffer: &VertexBuffer) -> Self {
+        assert!(self.queue_flags.contains(vk::QueueFlags::GRAPHICS));
+
+        unsafe {
+            self.vk_device.cmd_bind_vertex_buffers(
+                self.vk_cmd_buffer,
+                0,
+                &[*buffer.vk_buffer()],
+                &[0],
+            );
+        }
+
+        self
+    }
+
     // TODO: Typesafety
     pub fn draw(
         self,
@@ -232,6 +248,7 @@ impl CommandBuffer {
         first_vertex: u32,
         first_instance: u32,
     ) -> Self {
+        assert!(self.queue_flags.contains(vk::QueueFlags::GRAPHICS));
         unsafe {
             self.vk_device.cmd_draw(
                 self.vk_cmd_buffer,
