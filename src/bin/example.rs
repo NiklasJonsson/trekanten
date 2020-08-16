@@ -114,7 +114,7 @@ fn main() -> Result<(), trekanten::RenderError> {
             .expect("Missing material");
         let cmd_buf = frame
             .new_command_buffer()?
-            .begin()?
+            .begin_single_submit()?
             .begin_render_pass(render_pass, framebuffer, extent)
             .bind_material(&material)
             .bind_vertex_buffer(&vertex_buffer)

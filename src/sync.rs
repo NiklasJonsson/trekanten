@@ -82,11 +82,12 @@ impl std::ops::Drop for Fence {
     }
 }
 
+
 impl Fence {
-    pub fn new<D: AsVkDevice>(device: &D) -> Result<Self, FenceError> {
+    fn new<D: AsVkDevice>(device: &D, flags: vk::FenceCreateFlags) -> Result<Self, FenceError> {
         let vk_device = device.vk_device();
         let info = vk::FenceCreateInfo {
-            flags: vk::FenceCreateFlags::SIGNALED,
+            flags,
             ..Default::default()
         };
 
@@ -100,6 +101,14 @@ impl Fence {
             vk_device,
             vk_fence,
         })
+    }
+
+    pub fn signaled<D: AsVkDevice>(device: &D) -> Result<Self, FenceError> {
+        Self::new(device, vk::FenceCreateFlags::SIGNALED)
+    }
+
+    pub fn unsignaled<D: AsVkDevice>(device: &D) -> Result<Self, FenceError> {
+        Self::new(device, vk::FenceCreateFlags::empty())
     }
 
     pub fn vk_fence(&self) -> &vk::Fence {

@@ -51,9 +51,7 @@ impl std::ops::Drop for CommandPool {
 }
 
 impl CommandPool {
-    pub fn graphics(device: &Device) -> Result<Self, CommandPoolError> {
-        let qfam = device.graphics_queue_family().clone();
-
+    fn new(device: &Device, qfam: QueueFamily) -> Result<Self, CommandPoolError> {
         let info = vk::CommandPoolCreateInfo {
             queue_family_index: qfam.index,
             ..Default::default()
@@ -72,6 +70,14 @@ impl CommandPool {
             vk_command_pool,
             vk_device,
         })
+    }
+
+    pub fn graphics(device: &Device) -> Result<Self, CommandPoolError> {
+        Self::new(device, device.graphics_queue_family().clone())
+    }
+
+    pub fn util(device: &Device) -> Result<Self, CommandPoolError> {
+        Self::new(device, device.util_queue_family().clone())
     }
 
     pub fn create_command_buffer(&self) -> Result<CommandBuffer, CommandPoolError> {
@@ -121,6 +127,11 @@ impl std::fmt::Display for CommandBufferError {
     }
 }
 
+pub enum CommandBufferSubmission {
+    Single,
+    Multi,
+}
+
 // TODO: That we have to call all of these through a device means that might mean that we can't
 // "easily" record command buffers on other threads?
 // TODO: Builder pattern?
@@ -147,9 +158,17 @@ impl CommandBuffer {
         self.vk_cmd_buffer
     }
 
-    pub fn begin(self) -> Result<Self, CommandBufferError> {
+    pub fn begin(
+        self,
+        submission_type: CommandBufferSubmission,
+    ) -> Result<Self, CommandBufferError> {
+        let flags = match submission_type {
+            CommandBufferSubmission::Single => vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+            _ => vk::CommandBufferUsageFlags::empty(),
+        };
+
         let info = vk::CommandBufferBeginInfo {
-            flags: vk::CommandBufferUsageFlags::empty(),
+            flags,
             ..Default::default()
         };
 
@@ -160,6 +179,10 @@ impl CommandBuffer {
         };
 
         Ok(self)
+    }
+
+    pub fn begin_single_submit(self) -> Result<Self, CommandBufferError> {
+        self.begin(CommandBufferSubmission::Single)
     }
 
     pub fn end(self) -> Result<Self, CommandBufferError> {
@@ -257,6 +280,21 @@ impl CommandBuffer {
                 first_vertex,
                 first_instance,
             );
+        }
+
+        self
+    }
+
+    pub fn copy_buffer(self, src: vk::Buffer, dst: vk::Buffer, size: usize) -> Self {
+        let info = vk::BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size: size as u64,
+        };
+
+        unsafe {
+            self.vk_device
+                .cmd_copy_buffer(self.vk_cmd_buffer, src, dst, &[info]);
         }
 
         self

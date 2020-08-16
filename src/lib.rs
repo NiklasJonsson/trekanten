@@ -66,7 +66,7 @@ impl FrameSynchronization {
     pub fn new(device: &device::Device) -> Result<Self, FrameSynchronizationError> {
         let image_avail = sync::Semaphore::new(device)?;
         let render_done = sync::Semaphore::new(device)?;
-        let in_flight = sync::Fence::new(device)?;
+        let in_flight = sync::Fence::signaled(device)?;
 
         Ok(Self {
             image_available: image_avail,
@@ -109,6 +109,8 @@ pub struct Renderer {
     swapchain: swapchain::Swapchain,
     swapchain_image_idx: u32, // TODO: Bake this into the swapchain?
     image_to_frame_idx: Vec<Option<u32>>,
+
+    util_command_pool: command::CommandPool,
 
     // Needs to be kept-alive
     _debug_utils: util::vk_debug::DebugUtils,
@@ -190,6 +192,8 @@ impl Renderer {
             FrameSynchronization::new(&device)?,
         ];
 
+        let util_command_pool = command::CommandPool::util(&device)?;
+
         Ok(Self {
             instance,
             surface,
@@ -204,6 +208,7 @@ impl Renderer {
             swapchain_image_idx: 0,
             _debug_utils,
             materials: material::Materials::new(),
+            util_command_pool,
         })
     }
 
@@ -364,7 +369,9 @@ impl Renderer {
         &self,
         slice: &[V],
     ) -> Result<vertex::VertexBuffer, RenderError> {
-        let r = vertex::VertexBuffer::from_slice(&self.device, slice)?;
+        let queue = self.device.util_queue();
+        let r =
+            vertex::VertexBuffer::from_slice(&self.device, queue, &self.util_command_pool, slice)?;
         Ok(r)
     }
 }

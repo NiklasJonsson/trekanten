@@ -1,10 +1,12 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use crate::command::CommandPool;
 use crate::device::AsVkDevice;
 use crate::device::Device;
 use crate::device::VkDeviceHandle;
 use crate::mem;
+use crate::queue::Queue;
 
 pub trait VertexDefinition {
     fn binding_description() -> Vec<vk::VertexInputBindingDescription>;
@@ -61,7 +63,12 @@ impl std::ops::Drop for VertexBuffer {
 }
 
 impl VertexBuffer {
-    pub fn from_slice<V>(device: &Device, slice: &[V]) -> Result<Self, VertexBufferError> {
+    pub fn from_slice<V>(
+        device: &Device,
+        queue: &Queue,
+        command_pool: &CommandPool,
+        slice: &[V],
+    ) -> Result<Self, VertexBufferError> {
         let vk_device = device.vk_device();
         let size = std::mem::size_of::<V>() * slice.len();
 
@@ -88,6 +95,20 @@ impl VertexBuffer {
             vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         )?;
+
+        mem::copy_buffer(
+            device,
+            queue,
+            command_pool,
+            staging_buffer,
+            vertex_buffer,
+            size,
+        )?;
+
+        unsafe {
+            vk_device.destroy_buffer(staging_buffer, None);
+            vk_device.free_memory(staging_memory, None);
+        }
 
         Ok(Self {
             vk_device,

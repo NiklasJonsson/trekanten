@@ -1,14 +1,25 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use crate::command::CommandBufferError;
+use crate::command::CommandPool;
+use crate::command::CommandPoolError;
 use crate::device::AsVkDevice;
 use crate::device::Device;
+use crate::queue::Queue;
+use crate::queue::QueueError;
+use crate::sync::Fence;
+use crate::sync::FenceError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum MemoryError {
     BufferCreation(vk::Result),
     Allocation(vk::Result),
     BufferBinding(vk::Result),
+    CopyCommandPool(CommandPoolError),
+    CopyCommandBuffer(CommandBufferError),
+    CopySync(FenceError),
+    CopySubmit(QueueError),
 }
 
 impl std::error::Error for MemoryError {}
@@ -80,4 +91,36 @@ pub fn create_buffer(
     };
 
     Ok((buffer, device_memory))
+}
+
+pub fn copy_buffer(
+    device: &Device,
+    queue: &Queue,
+    command_pool: &CommandPool,
+    src: vk::Buffer,
+    dst: vk::Buffer,
+    size: usize,
+) -> Result<(), MemoryError> {
+    let cmd_buf = command_pool
+        .create_command_buffer()
+        .map_err(MemoryError::CopyCommandPool)?;
+    let vk_cmd_buf = cmd_buf
+        .begin_single_submit()
+        .map_err(MemoryError::CopyCommandBuffer)?
+        .copy_buffer(src, dst, size)
+        .end()
+        .map_err(MemoryError::CopyCommandBuffer)?
+        .vk_command_buffer();
+
+    let bufs = [vk_cmd_buf];
+    let submit_info = vk::SubmitInfo::builder().command_buffers(&bufs);
+
+    let copied = Fence::unsignaled(device).map_err(MemoryError::CopySync)?;
+    queue
+        .submit(&submit_info, &copied)
+        .map_err(MemoryError::CopySubmit)?;
+
+    // TODO: Async?
+    copied.blocking_wait().map_err(MemoryError::CopySync)?;
+    Ok(())
 }

@@ -96,11 +96,19 @@ impl Device {
         &self.queue_families.graphics
     }
 
+    pub fn util_queue_family(&self) -> &QueueFamily {
+        &self.queue_families.graphics
+    }
+
     pub fn present_queue_family(&self) -> &QueueFamily {
         &self.queue_families.present
     }
 
     pub fn graphics_queue(&self) -> &Queue {
+        &self.graphics_queue
+    }
+
+    pub fn util_queue(&self) -> &Queue {
         &self.graphics_queue
     }
 
