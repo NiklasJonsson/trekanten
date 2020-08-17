@@ -82,7 +82,6 @@ impl std::ops::Drop for Fence {
     }
 }
 
-
 impl Fence {
     fn new<D: AsVkDevice>(device: &D, flags: vk::FenceCreateFlags) -> Result<Self, FenceError> {
         let vk_device = device.vk_device();

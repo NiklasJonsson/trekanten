@@ -50,27 +50,36 @@ fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
     }
 }
 
-fn vertex_buffer() -> Vec<Vertex> {
+fn vertices() -> Vec<Vertex> {
     vec![
         Vertex {
-            pos: glm::vec2(0.0, -0.5),
+            pos: glm::vec2(-0.5, -0.5),
             col: glm::vec3(1.0, 0.0, 0.0),
         },
         Vertex {
-            pos: glm::vec2(0.5, 0.5),
+            pos: glm::vec2(0.5, -0.5),
             col: glm::vec3(0.0, 1.0, 0.0),
         },
         Vertex {
-            pos: glm::vec2(-0.5, 0.5),
+            pos: glm::vec2(0.5, 0.5),
             col: glm::vec3(0.0, 0.0, 1.0),
         },
+        Vertex {
+            pos: glm::vec2(-0.5, 0.5),
+            col: glm::vec3(1.0, 1.0, 1.0),
+        },
     ]
+}
+
+fn indices() -> Vec<u32> {
+    vec![0, 1, 2, 2, 3, 0]
 }
 
 fn main() -> Result<(), trekanten::RenderError> {
     env_logger::init();
 
-    let vertices = vertex_buffer();
+    let vertices = vertices();
+    let indices = indices();
 
     let mut window = trekanten::window::GlfwWindow::new();
     let mut renderer = trekanten::Renderer::new(&window)?;
@@ -78,6 +87,10 @@ fn main() -> Result<(), trekanten::RenderError> {
     let vertex_buffer = renderer
         .vertex_buffer_from_slice(&vertices)
         .expect("Failed to create vertex buffer");
+
+    let index_buffer = renderer
+        .index_buffer_from_slice(&indices)
+        .expect("Failed to create index buffer");
 
     let material_info = material::MaterialDescriptor::builder()
         .vertex_shader("vert.spv")
@@ -117,8 +130,9 @@ fn main() -> Result<(), trekanten::RenderError> {
             .begin_single_submit()?
             .begin_render_pass(render_pass, framebuffer, extent)
             .bind_material(&material)
+            .bind_index_buffer(&index_buffer)
             .bind_vertex_buffer(&vertex_buffer)
-            .draw(vertices.len() as u32, 1, 0, 0)
+            .draw_indexed(indices.len() as u32)
             .end_render_pass()
             .end()?;
 

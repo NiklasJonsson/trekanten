@@ -8,6 +8,7 @@ mod image;
 mod instance;
 pub mod material;
 mod mem;
+pub mod mesh;
 mod pipeline;
 mod queue;
 mod render_pass;
@@ -368,10 +369,15 @@ impl Renderer {
     pub fn vertex_buffer_from_slice<V>(
         &self,
         slice: &[V],
-    ) -> Result<vertex::VertexBuffer, RenderError> {
+    ) -> Result<mesh::VertexBuffer, RenderError> {
         let queue = self.device.util_queue();
-        let r =
-            vertex::VertexBuffer::from_slice(&self.device, queue, &self.util_command_pool, slice)?;
-        Ok(r)
+        mesh::VertexBuffer::from_slice(&self.device, queue, &self.util_command_pool, slice)
+            .map_err(RenderError::VertexBuffer)
+    }
+
+    pub fn index_buffer_from_slice(&self, slice: &[u32]) -> Result<mesh::IndexBuffer, RenderError> {
+        let queue = self.device.util_queue();
+        mesh::IndexBuffer::from_slice(&self.device, queue, &self.util_command_pool, slice)
+            .map_err(RenderError::IndexBuffer)
     }
 }

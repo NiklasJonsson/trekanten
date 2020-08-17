@@ -15,7 +15,8 @@ pub enum RenderError {
     Frame(crate::FrameSynchronizationError),
     Fence(sync::FenceError),
     Queue(queue::QueueError),
-    VertexBuffer(vertex::VertexBufferError),
+    VertexBuffer(mem::DeviceBufferError),
+    IndexBuffer(mem::DeviceBufferError),
     NeedsResize,
 }
 
@@ -101,11 +102,5 @@ impl From<queue::QueueError> for RenderError {
 impl From<material::MaterialError> for RenderError {
     fn from(e: material::MaterialError) -> Self {
         Self::Material(e)
-    }
-}
-
-impl From<vertex::VertexBufferError> for RenderError {
-    fn from(e: vertex::VertexBufferError) -> Self {
-        Self::VertexBuffer(e)
     }
 }
