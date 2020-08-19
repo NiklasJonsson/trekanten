@@ -130,6 +130,15 @@ impl<A> Storage<A> {
         }
     }
 
+    // TODO: Tests for this
+    pub fn get_mut(&mut self, h: &Handle<A>) -> Option<&mut A> {
+        if !self.has(h) {
+            None
+        } else {
+            Some(&mut self.data[self.sparse[h.index()] as usize])
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }

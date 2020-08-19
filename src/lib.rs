@@ -1,21 +1,24 @@
 use ash::vk;
 
 mod command;
+mod common;
+mod descriptor;
 mod device;
 mod error;
 mod framebuffer;
 mod image;
 mod instance;
-pub mod material;
 mod mem;
 pub mod mesh;
-mod pipeline;
+pub mod pipeline;
 mod queue;
 mod render_pass;
 mod resource;
+mod spirv;
 mod surface;
 mod swapchain;
 mod sync;
+pub mod uniform;
 mod util;
 pub mod vertex;
 pub mod window;
@@ -23,6 +26,8 @@ pub mod window;
 pub use error::RenderError;
 pub use resource::Handle;
 pub use resource::ResourceManager;
+
+use common::MAX_FRAMES_IN_FLIGHT;
 
 // Notes:
 // We can have N number of swapchain images, it depends on the backing presentation implementation.
@@ -101,15 +106,18 @@ impl Frame {
 pub const WINDOW_HEIGHT: u32 = 300;
 pub const WINDOW_WIDTH: u32 = 300;
 
-const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 pub struct Renderer {
     // Swapchain-related
     // TODO: Could render pass be a abstracted as forward-renderer?
     render_pass: render_pass::RenderPass,
     swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
-    materials: material::Materials,
+
+    // Resources
+    graphics_pipelines: pipeline::GraphicsPipelines,
     vertex_buffers: resource::Storage<mesh::VertexBuffer>,
     index_buffers: resource::Storage<mesh::IndexBuffer>,
+    uniform_buffers: uniform::UniformBuffers,
+    descriptor_sets: descriptor::DescriptorSets,
 
     swapchain: swapchain::Swapchain,
     swapchain_image_idx: u32, // TODO: Bake this into the swapchain?
@@ -120,9 +128,9 @@ pub struct Renderer {
     // Needs to be kept-alive
     _debug_utils: util::vk_debug::DebugUtils,
 
-    frame_synchronization: [FrameSynchronization; MAX_FRAMES_IN_FLIGHT as usize],
+    frame_synchronization: [FrameSynchronization; MAX_FRAMES_IN_FLIGHT],
     frame_idx: u32,
-    frames: [Option<Frame>; MAX_FRAMES_IN_FLIGHT as usize],
+    frames: [Option<Frame>; MAX_FRAMES_IN_FLIGHT],
 
     device: device::Device,
     surface: surface::Surface,
@@ -198,6 +206,7 @@ impl Renderer {
         ];
 
         let util_command_pool = command::CommandPool::util(&device)?;
+        let descriptor_sets = descriptor::DescriptorSets::new(&device);
 
         Ok(Self {
             instance,
@@ -212,9 +221,11 @@ impl Renderer {
             frames,
             swapchain_image_idx: 0,
             _debug_utils,
-            materials: material::Materials::default(),
-            vertex_buffers: resource::Storage::<mesh::VertexBuffer>::new(),
-            index_buffers: resource::Storage::<mesh::IndexBuffer>::new(),
+            graphics_pipelines: Default::default(),
+            vertex_buffers: Default::default(),
+            index_buffers: Default::default(),
+            uniform_buffers: Default::default(),
+            descriptor_sets,
             util_command_pool,
         })
     }
@@ -242,7 +253,7 @@ impl Renderer {
         }
 
         // This will drop the frame that resided here previously
-        std::mem::replace(&mut self.frames[self.frame_idx as usize], None);
+        let _ = std::mem::replace(&mut self.frames[self.frame_idx as usize], None);
 
         let gfx_command_pool = command::CommandPool::graphics(&self.device)?;
 
@@ -303,7 +314,7 @@ impl Renderer {
             return Err(RenderError::NeedsResize);
         }
 
-        self.frame_idx = (self.frame_idx + 1) % MAX_FRAMES_IN_FLIGHT;
+        self.frame_idx = (self.frame_idx + 1) % MAX_FRAMES_IN_FLIGHT as u32;
 
         Ok(())
     }
@@ -321,8 +332,11 @@ impl Renderer {
     }
 
     fn recreate_pipelines(&mut self) -> Result<(), RenderError> {
-        self.materials
-            .recreate_all(&self.device, self.swapchain_extent(), &self.render_pass)?;
+        self.graphics_pipelines.recreate_all(
+            &self.device,
+            self.swapchain_extent(),
+            &self.render_pass,
+        )?;
         Ok(())
     }
 
@@ -351,27 +365,69 @@ impl Renderer {
 
         Ok(())
     }
+
+    pub fn update_uniform<T>(
+        &mut self,
+        h: &Handle<uniform::UniformBuffer>,
+        data: &T,
+    ) -> Result<(), mem::DeviceBufferError> {
+        let ubuf = self
+            .uniform_buffers
+            .get_mut(h, self.frame_idx as usize)
+            .expect("Failed to update uniform");
+
+        ubuf.update_with(data)
+    }
+
+    pub fn create_descriptor_set(
+        &mut self,
+        gfx_pipeline_handle: &Handle<pipeline::GraphicsPipeline>,
+        uniform_buffer_handle: &Handle<uniform::UniformBuffer>,
+    ) -> Result<Handle<descriptor::DescriptorSet>, RenderError> {
+        let gfx_pipeline = self.get_resource(gfx_pipeline_handle).expect("FAIL");
+
+        assert_eq!(gfx_pipeline.vk_descriptor_set_layouts().len(), 1);
+        let uniform_buffers = self
+            .uniform_buffers
+            .get_all(uniform_buffer_handle)
+            .ok_or(RenderError::MissingUniformBuffersForDescriptor)?;
+        let descriptor = descriptor::DescriptorSetDescriptor {
+            layout: gfx_pipeline.vk_descriptor_set_layouts()[0],
+            uniform_buffers,
+        };
+
+        self.descriptor_sets
+            .create(descriptor)
+            .map_err(RenderError::DescriptorSet)
+    }
+
+    pub fn get_descriptor_set(
+        &self,
+        handle: &Handle<descriptor::DescriptorSet>,
+    ) -> Option<&descriptor::DescriptorSet> {
+        self.descriptor_sets.get(handle, self.frame_idx as usize)
+    }
 }
 
 impl
     resource::ResourceManager<
-        material::MaterialDescriptor,
-        material::Material,
-        material::MaterialError,
+        pipeline::GraphicsPipelineDescriptor,
+        pipeline::GraphicsPipeline,
+        pipeline::PipelineError,
     > for Renderer
 {
     fn get_resource(
         &self,
-        handle: &resource::Handle<material::Material>,
-    ) -> Option<&material::Material> {
-        self.materials.get(handle)
+        handle: &Handle<pipeline::GraphicsPipeline>,
+    ) -> Option<&pipeline::GraphicsPipeline> {
+        self.graphics_pipelines.get(handle)
     }
 
     fn create_resource(
         &mut self,
-        descriptor: material::MaterialDescriptor,
-    ) -> Result<resource::Handle<material::Material>, material::MaterialError> {
-        self.materials.create(
+        descriptor: pipeline::GraphicsPipelineDescriptor,
+    ) -> Result<Handle<pipeline::GraphicsPipeline>, pipeline::PipelineError> {
+        self.graphics_pipelines.create(
             &self.device,
             descriptor,
             self.swapchain_extent(),
@@ -387,17 +443,14 @@ impl<'a>
         mem::DeviceBufferError,
     > for Renderer
 {
-    fn get_resource(
-        &self,
-        handle: &resource::Handle<mesh::VertexBuffer>,
-    ) -> Option<&mesh::VertexBuffer> {
+    fn get_resource(&self, handle: &Handle<mesh::VertexBuffer>) -> Option<&mesh::VertexBuffer> {
         self.vertex_buffers.get(handle)
     }
 
     fn create_resource(
         &mut self,
         descriptor: mesh::VertexBufferDescriptor<'a>,
-    ) -> Result<resource::Handle<mesh::VertexBuffer>, mem::DeviceBufferError> {
+    ) -> Result<Handle<mesh::VertexBuffer>, mem::DeviceBufferError> {
         let queue = self.device.util_queue();
         let new =
             mesh::VertexBuffer::create(&self.device, queue, &self.util_command_pool, &descriptor)?;
@@ -413,21 +466,42 @@ impl<'a>
         mem::DeviceBufferError,
     > for Renderer
 {
-    fn get_resource(
-        &self,
-        handle: &resource::Handle<mesh::IndexBuffer>,
-    ) -> Option<&mesh::IndexBuffer> {
+    fn get_resource(&self, handle: &Handle<mesh::IndexBuffer>) -> Option<&mesh::IndexBuffer> {
         self.index_buffers.get(handle)
     }
 
     fn create_resource(
         &mut self,
         descriptor: mesh::IndexBufferDescriptor<'a>,
-    ) -> Result<resource::Handle<mesh::IndexBuffer>, mem::DeviceBufferError> {
+    ) -> Result<Handle<mesh::IndexBuffer>, mem::DeviceBufferError> {
         let queue = self.device.util_queue();
         let new =
             mesh::IndexBuffer::create(&self.device, queue, &self.util_command_pool, &descriptor)?;
 
         Ok(self.index_buffers.add(new))
+    }
+}
+
+impl<'a>
+    resource::ResourceManager<
+        uniform::UniformBufferDescriptor<'a>,
+        uniform::UniformBuffer,
+        mem::DeviceBufferError,
+    > for Renderer
+{
+    fn get_resource(
+        &self,
+        handle: &Handle<uniform::UniformBuffer>,
+    ) -> Option<&uniform::UniformBuffer> {
+        self.uniform_buffers.get(handle, self.frame_idx as usize)
+    }
+
+    fn create_resource(
+        &mut self,
+        descriptor: uniform::UniformBufferDescriptor<'a>,
+    ) -> Result<Handle<uniform::UniformBuffer>, mem::DeviceBufferError> {
+        let queue = self.device.util_queue();
+        self.uniform_buffers
+            .create(&self.device, queue, &self.util_command_pool, &descriptor)
     }
 }

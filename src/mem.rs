@@ -71,15 +71,7 @@ pub struct DeviceBuffer {
     vk_device: VkDeviceHandle,
     buffer: vk::Buffer,
     device_memory: vk::DeviceMemory,
-}
-
-impl std::ops::Drop for DeviceBuffer {
-    fn drop(&mut self) {
-        unsafe {
-            self.vk_device.destroy_buffer(self.buffer, None);
-            self.vk_device.free_memory(self.device_memory, None);
-        }
-    }
+    is_host_avail: bool,
 }
 
 impl DeviceBuffer {
@@ -126,10 +118,15 @@ impl DeviceBuffer {
                 .map_err(MemoryError::BufferBinding)?;
         };
 
+        let is_host_avail = properties.contains(
+            vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+        );
+
         Ok(Self {
             vk_device,
             buffer,
             device_memory,
+            is_host_avail,
         })
     }
 
@@ -186,6 +183,37 @@ impl DeviceBuffer {
 
     pub fn vk_buffer(&self) -> &vk::Buffer {
         &self.buffer
+    }
+
+    pub fn update_data_at(&mut self, data: &[u8], offset: usize) -> Result<(), DeviceBufferError> {
+        assert!(self.is_host_avail);
+        let size = data.len();
+        unsafe {
+            let mapped_ptr = self
+                .vk_device
+                .map_memory(
+                    self.device_memory,
+                    offset as vk::DeviceSize,
+                    size as vk::DeviceSize,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .map_err(DeviceBufferError::MemoryMapping)?;
+            let src = data.as_ptr() as *const u8;
+            let dst = mapped_ptr as *mut u8;
+            std::ptr::copy_nonoverlapping::<u8>(src, dst, size);
+            self.vk_device.unmap_memory(self.device_memory);
+        }
+
+        Ok(())
+    }
+}
+
+impl std::ops::Drop for DeviceBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            self.vk_device.destroy_buffer(self.buffer, None);
+            self.vk_device.free_memory(self.device_memory, None);
+        }
     }
 }
 

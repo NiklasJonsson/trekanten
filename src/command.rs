@@ -3,11 +3,11 @@ use ash::vk;
 
 use std::rc::Rc;
 
+use crate::descriptor::DescriptorSet;
 use crate::device::AsVkDevice;
 use crate::device::Device;
-use crate::device::VkDevice;
+use crate::device::VkDeviceHandle;
 use crate::framebuffer::Framebuffer;
-use crate::material::Material;
 use crate::mesh::IndexBuffer;
 use crate::mesh::VertexBuffer;
 use crate::pipeline::GraphicsPipeline;
@@ -39,7 +39,7 @@ impl From<CommandBufferError> for CommandPoolError {
 pub struct CommandPool {
     queue_family: QueueFamily,
     vk_command_pool: vk::CommandPool,
-    vk_device: Rc<VkDevice>,
+    vk_device: VkDeviceHandle,
 }
 
 impl std::ops::Drop for CommandPool {
@@ -139,12 +139,12 @@ pub enum CommandBufferSubmission {
 pub struct CommandBuffer {
     queue_flags: vk::QueueFlags,
     vk_cmd_buffer: vk::CommandBuffer,
-    vk_device: Rc<VkDevice>,
+    vk_device: VkDeviceHandle,
 }
 
 impl CommandBuffer {
     pub fn new(
-        vk_device: Rc<VkDevice>,
+        vk_device: VkDeviceHandle,
         vk_cmd_buffer: vk::CommandBuffer,
         queue_flags: vk::QueueFlags,
     ) -> Self {
@@ -235,14 +235,14 @@ impl CommandBuffer {
         self
     }
 
-    pub fn bind_material(self, material: &Material) -> Self {
+    pub fn bind_graphics_pipeline(self, graphics_pipeline: &GraphicsPipeline) -> Self {
         assert!(self.queue_flags.contains(vk::QueueFlags::GRAPHICS));
 
         unsafe {
             self.vk_device.cmd_bind_pipeline(
                 self.vk_cmd_buffer,
                 GraphicsPipeline::BIND_POINT,
-                *material.pipeline().vk_pipeline(),
+                *graphics_pipeline.vk_pipeline(),
             );
         }
 
@@ -279,6 +279,25 @@ impl CommandBuffer {
         self
     }
 
+    pub fn bind_descriptor_set(self, set: &DescriptorSet, pipeline: &GraphicsPipeline) -> Self {
+        assert!(self.queue_flags.contains(vk::QueueFlags::GRAPHICS));
+
+        let sets = [*set.vk_descriptor_set()];
+        unsafe {
+            self.vk_device.cmd_bind_descriptor_sets(
+                self.vk_cmd_buffer,
+                GraphicsPipeline::BIND_POINT,
+                *pipeline.vk_pipeline_layout(),
+                0,
+                &sets,
+                &[],
+            );
+        }
+
+        self
+    }
+
+    /*
     // TODO: Typesafety
     pub fn draw(
         self,
@@ -300,6 +319,7 @@ impl CommandBuffer {
 
         self
     }
+    */
 
     pub fn draw_indexed(self, n_vertices: u32) -> Self {
         assert!(self.queue_flags.contains(vk::QueueFlags::GRAPHICS));

@@ -10,7 +10,6 @@ pub enum RenderError {
     Swapchain(swapchain::SwapchainError),
     RenderPass(render_pass::RenderPassError),
     Pipeline(pipeline::PipelineError),
-    Material(material::MaterialError),
     CommandPool(command::CommandPoolError),
     Frame(crate::FrameSynchronizationError),
     Fence(sync::FenceError),
@@ -18,6 +17,8 @@ pub enum RenderError {
     VertexBuffer(mem::DeviceBufferError),
     IndexBuffer(mem::DeviceBufferError),
     NeedsResize,
+    MissingUniformBuffersForDescriptor,
+    DescriptorSet(descriptor::DescriptorSetError),
 }
 
 impl std::error::Error for RenderError {}
@@ -96,11 +97,5 @@ impl From<sync::FenceError> for RenderError {
 impl From<queue::QueueError> for RenderError {
     fn from(e: queue::QueueError) -> Self {
         Self::Queue(e)
-    }
-}
-
-impl From<material::MaterialError> for RenderError {
-    fn from(e: material::MaterialError) -> Self {
-        Self::Material(e)
     }
 }

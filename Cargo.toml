@@ -11,6 +11,7 @@ ash = "0.31.0"
 ash-window = "0.4.1"
 raw-window-handle = "0.3.3"
 glfw = {version = "0.39.0", features = ["vulkan"]}
+spirv-reflect = "0.2.3" 
 
 # Math
 nalgebra-glm = "0.7.0"
@@ -21,3 +22,6 @@ memoffset = "0.5.5"
 # Util
 log = "0.4.8"
 env_logger = "0.7.1"
+
+[dev-dependencies]
+inline-spirv = "0.1.1"

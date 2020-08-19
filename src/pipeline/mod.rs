@@ -5,13 +5,16 @@ use std::ffi::CString;
 use std::fs::File;
 use std::io;
 use std::path::Path;
-use std::rc::Rc;
+use std::path::PathBuf;
 
 use crate::device::AsVkDevice;
 use crate::device::Device;
-use crate::device::VkDevice;
+use crate::device::VkDeviceHandle;
 use crate::render_pass::RenderPass;
+use crate::resource::{Handle, Storage};
+use crate::spirv::{parse_descriptor_sets, DescriptorSetLayoutData, SpirvError};
 use crate::util;
+use crate::vertex::VertexDefinition;
 
 #[derive(Debug)]
 pub enum ShaderModuleError {
@@ -31,12 +34,14 @@ impl From<vk::Result> for ShaderModuleError {
     }
 }
 
+// TODO: Cleanup PipelineError/PipelineBuilderError
 #[derive(Debug)]
 pub enum PipelineError {
     IO(std::io::Error),
     ShaderModule(ShaderModuleError),
     PipelineLayoutCreation(vk::Result),
     PipelineCreation(vk::Result),
+    DescriptorSetLayout(vk::Result),
     Builder(PipelineBuilderError),
 }
 
@@ -85,7 +90,7 @@ fn read_shader_rel<N: AsRef<Path>>(name: N) -> io::Result<RawShader> {
 }
 
 struct ShaderModule {
-    vk_device: Rc<VkDevice>,
+    vk_device: VkDeviceHandle,
     vk_shader_module: vk::ShaderModule,
 }
 
@@ -120,9 +125,11 @@ pub trait Pipeline {
 }
 
 pub struct GraphicsPipeline {
-    vk_device: Rc<VkDevice>,
-    vk_pipeline_layout: vk::PipelineLayout,
+    vk_device: VkDeviceHandle,
     vk_pipeline: vk::Pipeline,
+    // TODO: Do we really need to keep these?
+    vk_pipeline_layout: vk::PipelineLayout,
+    vk_descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
 }
 
 impl Pipeline for GraphicsPipeline {
@@ -136,9 +143,14 @@ impl Pipeline for GraphicsPipeline {
 impl std::ops::Drop for GraphicsPipeline {
     fn drop(&mut self) {
         unsafe {
+            self.vk_device.destroy_pipeline(self.vk_pipeline, None);
+
             self.vk_device
                 .destroy_pipeline_layout(self.vk_pipeline_layout, None);
-            self.vk_device.destroy_pipeline(self.vk_pipeline, None);
+            for &dset_layout in self.vk_descriptor_set_layouts.iter() {
+                self.vk_device
+                    .destroy_descriptor_set_layout(dset_layout, None);
+            }
         }
     }
 }
@@ -146,6 +158,14 @@ impl std::ops::Drop for GraphicsPipeline {
 impl GraphicsPipeline {
     pub fn builder(device: &Device) -> GraphicsPipelineBuilder {
         GraphicsPipelineBuilder::new(device)
+    }
+
+    pub fn vk_descriptor_set_layouts(&self) -> &[vk::DescriptorSetLayout] {
+        &self.vk_descriptor_set_layouts
+    }
+
+    pub fn vk_pipeline_layout(&self) -> &vk::PipelineLayout {
+        &self.vk_pipeline_layout
     }
 }
 
@@ -167,6 +187,7 @@ pub enum PipelineBuilderError {
     MissingVertexDescription,
     MissingViewportState,
     MissingRenderPass,
+    InvalidShader(SpirvError),
 }
 
 impl std::error::Error for PipelineBuilderError {}
@@ -184,6 +205,7 @@ pub struct GraphicsPipelineBuilder<'a> {
     vertex_input: Option<VertexInputDescription<'a>>,
     viewport_state: Option<vk::PipelineViewportStateCreateInfo>,
     render_pass: Option<&'a RenderPass>,
+    descriptor_sets: Vec<DescriptorSetLayoutData>,
 }
 
 impl<'a> GraphicsPipelineBuilder<'a> {
@@ -197,6 +219,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             vertex_input: None,
             viewport_state: None,
             render_pass: None,
+            descriptor_sets: Vec::new(),
         }
     }
 
@@ -212,6 +235,11 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             .module(shader_module.vk_shader_module)
             .name(&self.entry_name)
             .build();
+
+        let mut new_desc_sets =
+            parse_descriptor_sets(&raw.data).map_err(PipelineBuilderError::InvalidShader)?;
+
+        self.descriptor_sets.append(&mut new_desc_sets);
 
         Ok(PipelineCreationInfo {
             create_info,
@@ -307,7 +335,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::CLOCKWISE)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false);
 
         let msaa_info = vk::PipelineMultisampleStateCreateInfo::builder()
@@ -323,7 +351,21 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             .logic_op_enable(false)
             .attachments(&attachments);
 
-        let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
+        let mut descriptor_set_layouts = Vec::with_capacity(self.descriptor_sets.len());
+        for dset in self.descriptor_sets.iter() {
+            let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&dset.bindings);
+
+            let dset_layout = unsafe {
+                vk_device
+                    .create_descriptor_set_layout(&info, None)
+                    .map_err(PipelineError::DescriptorSetLayout)?
+            };
+
+            descriptor_set_layouts.push(dset_layout);
+        }
+
+        let pipeline_layout_info =
+            vk::PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts);
 
         let pipeline_layout = unsafe {
             vk_device
@@ -363,6 +405,149 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             vk_device,
             vk_pipeline,
             vk_pipeline_layout: pipeline_layout,
+            vk_descriptor_set_layouts: descriptor_set_layouts,
         })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct GraphicsPipelineDescriptor {
+    vert: PathBuf,
+    frag: PathBuf,
+    vert_binding_description: Vec<vk::VertexInputBindingDescription>,
+    vert_attribute_description: Vec<vk::VertexInputAttributeDescription>,
+}
+
+impl GraphicsPipelineDescriptor {
+    pub fn builder() -> GraphicsPipelineDescriptorBuilder {
+        GraphicsPipelineDescriptorBuilder {
+            vert: None,
+            frag: None,
+            vert_attribute_description: Vec::new(),
+            vert_binding_description: Vec::new(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum BuilderError {
+    MissingVertexShader,
+    MissingFragmentShader,
+    MissingVertexDescription,
+}
+
+impl std::error::Error for BuilderError {}
+impl std::fmt::Display for BuilderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+pub struct GraphicsPipelineDescriptorBuilder {
+    vert: Option<PathBuf>,
+    frag: Option<PathBuf>,
+    vert_binding_description: Vec<vk::VertexInputBindingDescription>,
+    vert_attribute_description: Vec<vk::VertexInputAttributeDescription>,
+}
+
+impl GraphicsPipelineDescriptorBuilder {
+    pub fn vertex_shader<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.vert = Some(path.as_ref().to_path_buf());
+        self
+    }
+
+    pub fn fragment_shader<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.frag = Some(path.as_ref().to_path_buf());
+        self
+    }
+
+    pub fn vertex_type<V>(mut self) -> Self
+    where
+        V: VertexDefinition,
+    {
+        self.vert_binding_description = V::binding_description();
+        self.vert_attribute_description = V::attribute_description();
+        self
+    }
+
+    pub fn build(self) -> Result<GraphicsPipelineDescriptor, BuilderError> {
+        let vert = self.vert.ok_or(BuilderError::MissingVertexShader)?;
+        let frag = self.frag.ok_or(BuilderError::MissingFragmentShader)?;
+        if self.vert_binding_description.is_empty() || self.vert_attribute_description.is_empty() {
+            return Err(BuilderError::MissingVertexDescription);
+        }
+
+        let vert_binding_description = self.vert_binding_description;
+        let vert_attribute_description = self.vert_attribute_description;
+
+        Ok(GraphicsPipelineDescriptor {
+            vert,
+            frag,
+            vert_binding_description,
+            vert_attribute_description,
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct GraphicsPipelines {
+    desc_storage: Storage<GraphicsPipelineDescriptor>,
+    mat_storage: Storage<GraphicsPipeline>,
+}
+
+impl GraphicsPipelines {
+    pub fn new() -> Self {
+        Self {
+            desc_storage: Default::default(),
+            mat_storage: Default::default(),
+        }
+    }
+
+    fn create_pipeline(
+        device: &Device,
+        viewport_extent: util::Extent2D,
+        render_pass: &RenderPass,
+        descriptor: &GraphicsPipelineDescriptor,
+    ) -> Result<GraphicsPipeline, PipelineError> {
+        GraphicsPipeline::builder(device)
+            .vertex_shader(&descriptor.vert)?
+            .fragment_shader(&descriptor.frag)?
+            .vertex_input(
+                &descriptor.vert_attribute_description,
+                &descriptor.vert_binding_description,
+            )
+            .viewport_extent(viewport_extent)
+            .render_pass(render_pass)
+            .build()
+    }
+
+    pub fn recreate_all(
+        &mut self,
+        device: &Device,
+        viewport_extent: util::Extent2D,
+        render_pass: &RenderPass,
+    ) -> Result<(), PipelineError> {
+        for (mut pipe, desc) in self.mat_storage.iter_mut().zip(self.desc_storage.iter()) {
+            let mut new_pipe = Self::create_pipeline(device, viewport_extent, render_pass, &desc)?;
+            let _ = std::mem::replace(&mut pipe, &mut new_pipe);
+        }
+
+        Ok(())
+    }
+
+    pub fn create(
+        &mut self,
+        device: &Device,
+        descriptor: GraphicsPipelineDescriptor,
+        viewport_extent: util::Extent2D,
+        render_pass: &RenderPass,
+    ) -> Result<Handle<GraphicsPipeline>, PipelineError> {
+        let pipeline = Self::create_pipeline(device, viewport_extent, render_pass, &descriptor)?;
+        self.desc_storage.add(descriptor);
+        Ok(self.mat_storage.add(pipeline))
+    }
+
+    pub fn get(&self, h: &Handle<GraphicsPipeline>) -> Option<&GraphicsPipeline> {
+        self.mat_storage.get(h)
     }
 }

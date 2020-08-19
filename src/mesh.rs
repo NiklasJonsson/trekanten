@@ -4,6 +4,7 @@ use crate::command::CommandPool;
 use crate::device::Device;
 use crate::mem;
 use crate::queue::Queue;
+use crate::util::as_byte_slice;
 use crate::vertex::VertexDefinition;
 use crate::vertex::VertexFormat;
 
@@ -16,12 +17,6 @@ pub enum IndexSize {
 pub struct IndexBufferDescriptor<'a> {
     data: &'a [u8],
     index_size: IndexSize,
-}
-
-fn as_byte_slice<T>(slice: &[T]) -> &[u8] {
-    let ptr = slice.as_ptr() as *const u8;
-    let size = std::mem::size_of::<T>() * slice.len();
-    unsafe { std::slice::from_raw_parts(ptr, size) }
 }
 
 impl<'a> IndexBufferDescriptor<'a> {

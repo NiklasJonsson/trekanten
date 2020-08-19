@@ -4,8 +4,9 @@ use ash::vk;
 
 use nalgebra_glm as glm;
 
-use trekanten::material;
 use trekanten::mesh;
+use trekanten::pipeline;
+use trekanten::uniform;
 use trekanten::window::Window;
 use trekanten::Handle;
 use trekanten::ResourceManager;
@@ -43,6 +44,13 @@ impl trekanten::vertex::VertexDefinition for Vertex {
     }
 }
 
+#[repr(C)]
+struct UniformBufferObject {
+    model: glm::Mat4,
+    view: glm::Mat4,
+    proj: glm::Mat4,
+}
+
 // TODO:
 // * Handle window requested resize
 // * Wait while minimized
@@ -78,6 +86,29 @@ fn indices() -> Vec<u32> {
     vec![0, 1, 2, 2, 3, 0]
 }
 
+fn get_next_mvp(start: &std::time::Instant) -> UniformBufferObject {
+    let time = std::time::Instant::now() - *start;
+    let time = time.as_secs_f32();
+
+    let mut ubo = UniformBufferObject {
+        model: glm::rotate(
+            &glm::identity(),
+            time * std::f32::consts::FRAC_PI_2,
+            &glm::vec3(0.0, 0.0, 1.0),
+        ),
+        view: glm::look_at(
+            &glm::vec3(2.0, 2.0, 2.0),
+            &glm::vec3(0.0, 0.0, 0.0),
+            &glm::vec3(0.0, 0.0, 1.0),
+        ),
+        proj: glm::perspective(std::f32::consts::FRAC_PI_4, 1.0, 0.1, 10.0),
+    };
+
+    ubo.proj[(1, 1)] *= -1.0;
+
+    ubo
+}
+
 fn main() -> Result<(), trekanten::RenderError> {
     env_logger::init();
 
@@ -97,17 +128,29 @@ fn main() -> Result<(), trekanten::RenderError> {
         .create_resource(index_buffer_descriptor)
         .expect("Failed to create index buffer");
 
-    let material_info = material::MaterialDescriptor::builder()
+    let pipeline_descriptor = pipeline::GraphicsPipelineDescriptor::builder()
         .vertex_shader("vert.spv")
         .fragment_shader("frag.spv")
         .vertex_type::<Vertex>()
         .build()
-        .expect("Failed to create material desc");
+        .expect("Failed to create graphics pipeline desc");
 
-    let material_handle = renderer
-        .create_resource(material_info)
-        .expect("Failed to create material");
+    let gfx_pipeline_handle = renderer
+        .create_resource(pipeline_descriptor)
+        .expect("Failed to create graphics pipeline");
 
+    let uniform_buffer_desc =
+        uniform::UniformBufferDescriptor::uninitialized::<UniformBufferObject>(1);
+
+    let uniform_buffer_handle = renderer
+        .create_resource(uniform_buffer_desc)
+        .expect("Failed to create uniform buffer");
+
+    let desc_set_handle = renderer
+        .create_descriptor_set(&gfx_pipeline_handle, &uniform_buffer_handle)
+        .expect("Failed to create descriptor set");
+
+    let start = std::time::Instant::now();
     while !window.window.should_close() {
         window.glfw.poll_events();
         for (_, event) in glfw::flush_messages(&window.events) {
@@ -122,25 +165,34 @@ fn main() -> Result<(), trekanten::RenderError> {
             x => x,
         }?;
 
-        let render_pass = renderer.render_pass();
+        let next_mvp = get_next_mvp(&start);
+        renderer
+            .update_uniform(&uniform_buffer_handle, &next_mvp)
+            .expect("Failed to update uniform buffer!");
 
+        let render_pass = renderer.render_pass();
         let extent = renderer.swapchain_extent();
         let framebuffer = renderer.framebuffer(&frame);
 
-        let material = renderer
-            .get_resource(&material_handle)
-            .expect("Missing material");
+        let gfx_pipeline = renderer
+            .get_resource(&gfx_pipeline_handle)
+            .expect("Missing graphics pipeline");
         let index_buffer = renderer
             .get_resource(&index_buffer_handle)
             .expect("Missing index buffer");
         let vertex_buffer = renderer
             .get_resource(&vertex_buffer_handle)
             .expect("Missing vertex buffer");
+        let desc_set = renderer
+            .get_descriptor_set(&desc_set_handle)
+            .expect("Missing descriptor set");
+
         let cmd_buf = frame
             .new_command_buffer()?
             .begin_single_submit()?
             .begin_render_pass(render_pass, framebuffer, extent)
-            .bind_material(&material)
+            .bind_graphics_pipeline(&gfx_pipeline)
+            .bind_descriptor_set(&desc_set, &gfx_pipeline)
             .bind_index_buffer(&index_buffer)
             .bind_vertex_buffer(&vertex_buffer)
             .draw_indexed(indices.len() as u32)
