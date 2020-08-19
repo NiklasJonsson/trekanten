@@ -21,6 +21,8 @@ pub mod vertex;
 pub mod window;
 
 pub use error::RenderError;
+pub use resource::Handle;
+pub use resource::ResourceManager;
 
 // Notes:
 // We can have N number of swapchain images, it depends on the backing presentation implementation.
@@ -106,6 +108,8 @@ pub struct Renderer {
     render_pass: render_pass::RenderPass,
     swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
     materials: material::Materials,
+    vertex_buffers: resource::Storage<mesh::VertexBuffer>,
+    index_buffers: resource::Storage<mesh::IndexBuffer>,
 
     swapchain: swapchain::Swapchain,
     swapchain_image_idx: u32, // TODO: Bake this into the swapchain?
@@ -209,6 +213,8 @@ impl Renderer {
             swapchain_image_idx: 0,
             _debug_utils,
             materials: material::Materials::new(),
+            vertex_buffers: resource::Storage::<mesh::VertexBuffer>::new(),
+            index_buffers: resource::Storage::<mesh::IndexBuffer>::new(),
             util_command_pool,
         })
     }
@@ -345,39 +351,83 @@ impl Renderer {
 
         Ok(())
     }
+}
 
-    pub fn create_material(
-        &mut self,
-        descriptor: material::MaterialDescriptor,
-    ) -> Result<resource::Handle<material::Material>, RenderError> {
-        let h = self.materials.create(
-            &self.device,
-            descriptor,
-            self.swapchain_extent(),
-            &self.render_pass,
-        )?;
-        Ok(h)
-    }
-
-    pub fn get_material(
+impl
+    resource::ResourceManager<
+        material::MaterialDescriptor,
+        material::Material,
+        material::MaterialError,
+    > for Renderer
+{
+    fn get_resource(
         &self,
         handle: &resource::Handle<material::Material>,
     ) -> Option<&material::Material> {
         self.materials.get(handle)
     }
 
-    pub fn vertex_buffer_from_slice<V>(
+    fn create_resource(
+        &mut self,
+        descriptor: material::MaterialDescriptor,
+    ) -> Result<resource::Handle<material::Material>, material::MaterialError> {
+        self.materials.create(
+            &self.device,
+            descriptor,
+            self.swapchain_extent(),
+            &self.render_pass,
+        )
+    }
+}
+
+impl<'a>
+    resource::ResourceManager<
+        mesh::VertexBufferDescriptor<'a>,
+        mesh::VertexBuffer,
+        mem::DeviceBufferError,
+    > for Renderer
+{
+    fn get_resource(
         &self,
-        slice: &[V],
-    ) -> Result<mesh::VertexBuffer, RenderError> {
-        let queue = self.device.util_queue();
-        mesh::VertexBuffer::from_slice(&self.device, queue, &self.util_command_pool, slice)
-            .map_err(RenderError::VertexBuffer)
+        handle: &resource::Handle<mesh::VertexBuffer>,
+    ) -> Option<&mesh::VertexBuffer> {
+        self.vertex_buffers.get(handle)
     }
 
-    pub fn index_buffer_from_slice(&self, slice: &[u32]) -> Result<mesh::IndexBuffer, RenderError> {
+    fn create_resource(
+        &mut self,
+        descriptor: mesh::VertexBufferDescriptor<'a>,
+    ) -> Result<resource::Handle<mesh::VertexBuffer>, mem::DeviceBufferError> {
         let queue = self.device.util_queue();
-        mesh::IndexBuffer::from_slice(&self.device, queue, &self.util_command_pool, slice)
-            .map_err(RenderError::IndexBuffer)
+        let new =
+            mesh::VertexBuffer::create(&self.device, queue, &self.util_command_pool, &descriptor)?;
+
+        Ok(self.vertex_buffers.add(new))
+    }
+}
+
+impl<'a>
+    resource::ResourceManager<
+        mesh::IndexBufferDescriptor<'a>,
+        mesh::IndexBuffer,
+        mem::DeviceBufferError,
+    > for Renderer
+{
+    fn get_resource(
+        &self,
+        handle: &resource::Handle<mesh::IndexBuffer>,
+    ) -> Option<&mesh::IndexBuffer> {
+        self.index_buffers.get(handle)
+    }
+
+    fn create_resource(
+        &mut self,
+        descriptor: mesh::IndexBufferDescriptor<'a>,
+    ) -> Result<resource::Handle<mesh::IndexBuffer>, mem::DeviceBufferError> {
+        let queue = self.device.util_queue();
+        let new =
+            mesh::IndexBuffer::create(&self.device, queue, &self.util_command_pool, &descriptor)?;
+
+        Ok(self.index_buffers.add(new))
     }
 }

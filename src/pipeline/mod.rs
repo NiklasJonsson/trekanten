@@ -12,7 +12,6 @@ use crate::device::Device;
 use crate::device::VkDevice;
 use crate::render_pass::RenderPass;
 use crate::util;
-use crate::vertex::VertexDefinition;
 
 #[derive(Debug)]
 pub enum ShaderModuleError {
@@ -156,8 +155,8 @@ struct PipelineCreationInfo {
 }
 
 struct VertexInputDescription<'a> {
-    binding_description: &'a [vk::VertexInputBindingDescription],
-    attribute_description: &'a [vk::VertexInputAttributeDescription],
+    _binding_description: &'a [vk::VertexInputBindingDescription],
+    _attribute_description: &'a [vk::VertexInputAttributeDescription],
     create_info: vk::PipelineVertexInputStateCreateInfo,
 }
 
@@ -241,8 +240,8 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             .build();
 
         self.vertex_input = Some(VertexInputDescription {
-            attribute_description,
-            binding_description,
+            _attribute_description: attribute_description,
+            _binding_description: binding_description,
             create_info,
         });
 

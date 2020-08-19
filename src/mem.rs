@@ -73,6 +73,15 @@ pub struct DeviceBuffer {
     device_memory: vk::DeviceMemory,
 }
 
+impl std::ops::Drop for DeviceBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            self.vk_device.destroy_buffer(self.buffer, None);
+            self.vk_device.free_memory(self.device_memory, None);
+        }
+    }
+}
+
 impl DeviceBuffer {
     pub fn new_empty(
         device: &Device,
@@ -172,11 +181,6 @@ impl DeviceBuffer {
             size,
         )?;
 
-        unsafe {
-            vk_device.destroy_buffer(staging.buffer, None);
-            vk_device.free_memory(staging.device_memory, None);
-        }
-
         Ok(dst_buffer)
     }
 
@@ -212,7 +216,7 @@ pub fn copy_buffer(
         .submit(&submit_info, &copied)
         .map_err(MemoryError::CopySubmit)?;
 
-    // TODO: Async?
+    // TODO: Async
     copied.blocking_wait().map_err(MemoryError::CopySync)?;
     Ok(())
 }

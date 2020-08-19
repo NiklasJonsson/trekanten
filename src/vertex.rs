@@ -1,5 +1,12 @@
 use ash::vk;
 
+// TODO: Cleanup traits to use this
+#[derive(Debug, Clone)]
+pub struct VertexFormat {
+    pub binding_description: Vec<vk::VertexInputBindingDescription>,
+    pub attribute_description: Vec<vk::VertexInputAttributeDescription>,
+}
+
 pub trait VertexDefinition {
     fn binding_description() -> Vec<vk::VertexInputBindingDescription>;
     fn attribute_description() -> Vec<vk::VertexInputAttributeDescription>;

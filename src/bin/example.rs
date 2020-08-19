@@ -5,7 +5,10 @@ use ash::vk;
 use nalgebra_glm as glm;
 
 use trekanten::material;
+use trekanten::mesh;
 use trekanten::window::Window;
+use trekanten::Handle;
+use trekanten::ResourceManager;
 
 #[repr(C, packed)]
 struct Vertex {
@@ -84,12 +87,14 @@ fn main() -> Result<(), trekanten::RenderError> {
     let mut window = trekanten::window::GlfwWindow::new();
     let mut renderer = trekanten::Renderer::new(&window)?;
 
-    let vertex_buffer = renderer
-        .vertex_buffer_from_slice(&vertices)
+    let vertex_buffer_descriptor = mesh::VertexBufferDescriptor::from_slice(&vertices);
+    let vertex_buffer_handle: Handle<mesh::VertexBuffer> = renderer
+        .create_resource(vertex_buffer_descriptor)
         .expect("Failed to create vertex buffer");
 
-    let index_buffer = renderer
-        .index_buffer_from_slice(&indices)
+    let index_buffer_descriptor = mesh::IndexBufferDescriptor::from_slice(&indices);
+    let index_buffer_handle = renderer
+        .create_resource(index_buffer_descriptor)
         .expect("Failed to create index buffer");
 
     let material_info = material::MaterialDescriptor::builder()
@@ -100,7 +105,7 @@ fn main() -> Result<(), trekanten::RenderError> {
         .expect("Failed to create material desc");
 
     let material_handle = renderer
-        .create_material(material_info)
+        .create_resource(material_info)
         .expect("Failed to create material");
 
     while !window.window.should_close() {
@@ -123,8 +128,14 @@ fn main() -> Result<(), trekanten::RenderError> {
         let framebuffer = renderer.framebuffer(&frame);
 
         let material = renderer
-            .get_material(&material_handle)
+            .get_resource(&material_handle)
             .expect("Missing material");
+        let index_buffer = renderer
+            .get_resource(&index_buffer_handle)
+            .expect("Missing index buffer");
+        let vertex_buffer = renderer
+            .get_resource(&vertex_buffer_handle)
+            .expect("Missing vertex buffer");
         let cmd_buf = frame
             .new_command_buffer()?
             .begin_single_submit()?

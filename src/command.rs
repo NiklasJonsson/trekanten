@@ -272,7 +272,7 @@ impl CommandBuffer {
                 self.vk_cmd_buffer,
                 *buffer.vk_buffer(),
                 0,
-                vk::IndexType::UINT32,
+                buffer.vk_index_type(),
             );
         }
 

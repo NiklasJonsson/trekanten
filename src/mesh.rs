@@ -4,70 +4,122 @@ use crate::command::CommandPool;
 use crate::device::Device;
 use crate::mem;
 use crate::queue::Queue;
+use crate::vertex::VertexDefinition;
+use crate::vertex::VertexFormat;
 
-#[derive(Debug)]
-pub enum IndexBufferError {
-    Memory(mem::MemoryError),
-    MemoryMapping(vk::Result),
+#[derive(Debug, Copy, Clone)]
+pub enum IndexSize {
+    Size32,
+    Size16,
 }
 
-impl std::error::Error for IndexBufferError {}
-impl std::fmt::Display for IndexBufferError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+pub struct IndexBufferDescriptor<'a> {
+    data: &'a [u8],
+    index_size: IndexSize,
+}
+
+fn as_byte_slice<T>(slice: &[T]) -> &[u8] {
+    let ptr = slice.as_ptr() as *const u8;
+    let data = unsafe { std::slice::from_raw_parts(ptr, std::mem::size_of::<T>() * slice.len()) };
+
+    data
+}
+
+impl<'a> IndexBufferDescriptor<'a> {
+    pub fn from_slice<T>(slice: &'a [T]) -> Self {
+        let data = as_byte_slice(slice);
+        let index_size = match std::mem::size_of::<T>() {
+            4 => IndexSize::Size32,
+            2 => IndexSize::Size16,
+            _ => unreachable!("Invalid index type, needs to be either 16 or 32 bits"),
+        };
+
+        Self { data, index_size }
     }
 }
 
-impl From<mem::MemoryError> for IndexBufferError {
-    fn from(e: mem::MemoryError) -> Self {
-        Self::Memory(e)
-    }
+pub struct IndexBuffer {
+    pub buffer: mem::DeviceBuffer,
+    pub index_type: vk::IndexType,
 }
-
-pub struct IndexBuffer(pub mem::DeviceBuffer);
 
 impl IndexBuffer {
-    pub fn from_slice<V>(
+    pub fn create<'a>(
         device: &Device,
         queue: &Queue,
         command_pool: &CommandPool,
-        slice: &[V],
+        descriptor: &IndexBufferDescriptor<'a>,
     ) -> Result<Self, mem::DeviceBufferError> {
-        mem::DeviceBuffer::from_slice_staging(
+        let buffer = mem::DeviceBuffer::from_slice_staging(
             device,
             queue,
             command_pool,
             vk::BufferUsageFlags::INDEX_BUFFER,
-            slice,
-        )
-        .map(Self)
+            descriptor.data,
+        )?;
+
+        let index_type = match descriptor.index_size {
+            IndexSize::Size16 => vk::IndexType::UINT16,
+            IndexSize::Size32 => vk::IndexType::UINT32,
+        };
+
+        Ok(Self { buffer, index_type })
     }
 
     pub fn vk_buffer(&self) -> &vk::Buffer {
-        &self.0.vk_buffer()
+        &self.buffer.vk_buffer()
+    }
+
+    pub fn vk_index_type(&self) -> vk::IndexType {
+        self.index_type
     }
 }
 
-pub struct VertexBuffer(pub mem::DeviceBuffer);
+pub struct VertexBufferDescriptor<'a> {
+    data: &'a [u8],
+    format: VertexFormat,
+}
+
+impl<'a> VertexBufferDescriptor<'a> {
+    pub fn from_slice<V: VertexDefinition>(slice: &'a [V]) -> Self {
+        let data = as_byte_slice(slice);
+
+        let format = VertexFormat {
+            binding_description: V::binding_description(),
+            attribute_description: V::attribute_description(),
+        };
+
+        Self { data, format }
+    }
+}
+
+pub struct VertexBuffer {
+    pub buffer: mem::DeviceBuffer,
+    pub _format: VertexFormat,
+}
 
 impl VertexBuffer {
-    pub fn from_slice<V>(
+    pub fn create<'a>(
         device: &Device,
         queue: &Queue,
         command_pool: &CommandPool,
-        slice: &[V],
+        descriptor: &VertexBufferDescriptor<'a>,
     ) -> Result<Self, mem::DeviceBufferError> {
-        mem::DeviceBuffer::from_slice_staging(
+        let buffer = mem::DeviceBuffer::from_slice_staging(
             device,
             queue,
             command_pool,
             vk::BufferUsageFlags::VERTEX_BUFFER,
-            slice,
-        )
-        .map(Self)
+            descriptor.data,
+        )?;
+
+        Ok(Self {
+            buffer,
+            _format: descriptor.format.clone(),
+        })
     }
 
     pub fn vk_buffer(&self) -> &vk::Buffer {
-        &self.0.vk_buffer()
+        &self.buffer.vk_buffer()
     }
 }
