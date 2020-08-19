@@ -45,7 +45,7 @@ fn find_memory_type(
         }
     }
 
-    return None;
+    None
 }
 
 #[derive(Debug)]

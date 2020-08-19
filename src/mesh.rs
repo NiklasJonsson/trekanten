@@ -20,9 +20,8 @@ pub struct IndexBufferDescriptor<'a> {
 
 fn as_byte_slice<T>(slice: &[T]) -> &[u8] {
     let ptr = slice.as_ptr() as *const u8;
-    let data = unsafe { std::slice::from_raw_parts(ptr, std::mem::size_of::<T>() * slice.len()) };
-
-    data
+    let size = std::mem::size_of::<T>() * slice.len();
+    unsafe { std::slice::from_raw_parts(ptr, size) }
 }
 
 impl<'a> IndexBufferDescriptor<'a> {

@@ -107,7 +107,7 @@ impl<A> Storage<A> {
         assert_eq!(*self.dense.last().unwrap(), h.id);
 
         self.dense.pop();
-        return Some(self.data.pop().unwrap());
+        Some(self.data.pop().unwrap())
     }
 
     pub fn has(&self, h: &Handle<A>) -> bool {

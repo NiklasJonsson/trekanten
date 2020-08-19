@@ -212,7 +212,7 @@ impl Renderer {
             frames,
             swapchain_image_idx: 0,
             _debug_utils,
-            materials: material::Materials::new(),
+            materials: material::Materials::default(),
             vertex_buffers: resource::Storage::<mesh::VertexBuffer>::new(),
             index_buffers: resource::Storage::<mesh::IndexBuffer>::new(),
             util_command_pool,

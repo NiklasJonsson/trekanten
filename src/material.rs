@@ -36,6 +36,7 @@ impl From<PipelineError> for MaterialError {
     }
 }
 
+#[derive(Default)]
 pub struct Materials {
     desc_storage: Storage<MaterialDescriptor>,
     mat_storage: Storage<Material>,
@@ -174,7 +175,7 @@ impl MaterialDescriptorBuilder {
         let vert = self.vert.ok_or(BuilderError::MissingVertexShader)?;
         let frag = self.frag.ok_or(BuilderError::MissingFragmentShader)?;
         if self.vert_binding_description.is_empty() || self.vert_attribute_description.is_empty() {
-            return Err(BuilderError::MissingVertexDescription)?;
+            return Err(BuilderError::MissingVertexDescription.into());
         }
 
         let vert_binding_description = self.vert_binding_description;

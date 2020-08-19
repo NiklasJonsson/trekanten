@@ -151,7 +151,7 @@ impl GraphicsPipeline {
 
 struct PipelineCreationInfo {
     create_info: vk::PipelineShaderStageCreateInfo,
-    shader_module: ShaderModule,
+    _shader_module: ShaderModule,
 }
 
 struct VertexInputDescription<'a> {
@@ -215,7 +215,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
 
         Ok(PipelineCreationInfo {
             create_info,
-            shader_module,
+            _shader_module: shader_module,
         })
     }
 
