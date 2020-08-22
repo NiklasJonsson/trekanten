@@ -7,7 +7,7 @@ use crate::device::AsVkDevice;
 use crate::device::Device;
 use crate::device::VkDevice;
 use crate::framebuffer::{Framebuffer, FramebufferError};
-use crate::image::{Image, ImageView, ImageViewError};
+use crate::image::{ImageView, ImageViewError};
 use crate::instance::Instance;
 use crate::queue::Queue;
 use crate::render_pass::RenderPass;
@@ -61,7 +61,7 @@ pub struct SwapchainInfo {
 pub struct Swapchain {
     loader: SwapchainLoader,
     handle: vk::SwapchainKHR,
-    images: Vec<Image>,
+    images: Vec<vk::Image>,
     image_views: Vec<ImageView>,
     info: SwapchainInfo,
     vk_device: Rc<VkDevice>,
@@ -185,10 +185,7 @@ impl Swapchain {
             loader
                 .get_swapchain_images(handle)
                 .map_err(SwapchainError::ImageCreation)?
-        }
-        .into_iter()
-        .map(Image::new)
-        .collect::<Vec<_>>();
+        };
 
         // Store a lightweight representation of the info
         // TODO: Store full?
@@ -203,24 +200,9 @@ impl Swapchain {
             extent: image_extent.into(),
         };
 
-        let comp_mapping = vk::ComponentMapping {
-            r: vk::ComponentSwizzle::R,
-            g: vk::ComponentSwizzle::G,
-            b: vk::ComponentSwizzle::B,
-            a: vk::ComponentSwizzle::A,
-        };
-
-        let subresource_range = vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        };
-
         let image_views = images
             .iter()
-            .map(|img| ImageView::new(device, img, image_format, comp_mapping, subresource_range))
+            .map(|img| ImageView::new(device, img, image_format))
             .collect::<Result<Vec<_>, ImageViewError>>()
             .map_err(SwapchainError::ImageViewCreation)?;
 

@@ -43,8 +43,8 @@ impl IndexBuffer {
         queue: &Queue,
         command_pool: &CommandPool,
         descriptor: &IndexBufferDescriptor<'a>,
-    ) -> Result<Self, mem::DeviceBufferError> {
-        let buffer = mem::DeviceBuffer::from_slice_staging(
+    ) -> Result<Self, mem::MemoryError> {
+        let buffer = mem::DeviceBuffer::device_local_by_staging(
             device,
             queue,
             command_pool,
@@ -98,8 +98,8 @@ impl VertexBuffer {
         queue: &Queue,
         command_pool: &CommandPool,
         descriptor: &VertexBufferDescriptor<'a>,
-    ) -> Result<Self, mem::DeviceBufferError> {
-        let buffer = mem::DeviceBuffer::from_slice_staging(
+    ) -> Result<Self, mem::MemoryError> {
+        let buffer = mem::DeviceBuffer::device_local_by_staging(
             device,
             queue,
             command_pool,

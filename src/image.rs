@@ -6,16 +6,6 @@ use std::rc::Rc;
 use crate::device::AsVkDevice;
 use crate::device::VkDevice;
 
-pub struct Image {
-    vk_image: vk::Image,
-}
-
-impl Image {
-    pub fn new(vk_image: vk::Image) -> Self {
-        Self { vk_image }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum ImageViewError {
     Creation(vk::Result),
@@ -44,16 +34,29 @@ impl std::ops::Drop for ImageView {
 impl ImageView {
     pub fn new<D: AsVkDevice>(
         device: &D,
-        image: &Image,
+        vk_image: &vk::Image,
         format: vk::Format,
-        component_mapping: vk::ComponentMapping,
-        subresource_range: vk::ImageSubresourceRange,
     ) -> Result<Self, ImageViewError> {
+        let comp_mapping = vk::ComponentMapping {
+            r: vk::ComponentSwizzle::R,
+            g: vk::ComponentSwizzle::G,
+            b: vk::ComponentSwizzle::B,
+            a: vk::ComponentSwizzle::A,
+        };
+
+        let subresource_range = vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        };
+
         let info = vk::ImageViewCreateInfo::builder()
-            .image(image.vk_image)
+            .image(*vk_image)
             .view_type(vk::ImageViewType::TYPE_2D)
             .format(format)
-            .components(component_mapping)
+            .components(comp_mapping)
             .subresource_range(subresource_range);
 
         let vk_image_view = unsafe {
@@ -69,7 +72,7 @@ impl ImageView {
         })
     }
 
-    pub fn inner_vk_image_view(&self) -> &vk::ImageView {
+    pub fn vk_image_view(&self) -> &vk::ImageView {
         &self.vk_image_view
     }
 }

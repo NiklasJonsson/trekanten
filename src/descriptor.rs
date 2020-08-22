@@ -6,6 +6,7 @@ use crate::device::AsVkDevice;
 use crate::device::Device;
 use crate::device::VkDeviceHandle;
 use crate::resource::{Handle, Storage};
+use crate::texture::Texture;
 use crate::uniform::UniformBuffer;
 
 use crate::common::MAX_FRAMES_IN_FLIGHT;
@@ -39,12 +40,16 @@ impl std::ops::Drop for DescriptorPool {
 
 impl DescriptorPool {
     fn new(device: &Device) -> Self {
-        let descriptor_pool_size = vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
-        };
-
-        let pool_sizes = [descriptor_pool_size];
+        let pool_sizes = [
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
+            },
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: MAX_FRAMES_IN_FLIGHT as u32,
+            },
+        ];
 
         let pool_create_info = vk::DescriptorPoolCreateInfo::builder()
             .pool_sizes(&pool_sizes)
@@ -99,24 +104,45 @@ impl DescriptorSet {
         Self { vk_descriptor_set }
     }
 
-    fn bind_uniform_buffer(&self, vk_device: &VkDeviceHandle, buffer: &UniformBuffer) {
+    fn bind_resources(
+        &self,
+        vk_device: &VkDeviceHandle,
+        buffer: &UniformBuffer,
+        texture: &Texture,
+    ) {
         let buffer_info = vk::DescriptorBufferInfo {
             buffer: *buffer.vk_buffer(),
             offset: 0,
             range: buffer.elem_size() as u64,
         };
-        let infos = [buffer_info];
+        let buffer_infos = [buffer_info];
 
         // TODO: Use the values from the layout
-        let write = vk::WriteDescriptorSet::builder()
+        let buffer_write = vk::WriteDescriptorSet::builder()
             .dst_set(self.vk_descriptor_set)
             .dst_binding(0)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .buffer_info(&infos)
+            .buffer_info(&buffer_infos)
             .build();
 
-        let writes = [write];
+        let image_info = vk::DescriptorImageInfo {
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            image_view: *texture.vk_image_view(),
+            sampler: *texture.vk_sampler(),
+        };
+        let image_infos = [image_info];
+
+        // TODO: Use the values from the layout
+        let image_write = vk::WriteDescriptorSet::builder()
+            .dst_set(self.vk_descriptor_set)
+            .dst_binding(1)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&image_infos)
+            .build();
+
+        let writes = [buffer_write, image_write];
 
         unsafe {
             vk_device.update_descriptor_sets(&writes, &[]);
@@ -131,6 +157,7 @@ impl DescriptorSet {
 pub struct DescriptorSetDescriptor<'a> {
     pub layout: vk::DescriptorSetLayout,
     pub uniform_buffers: [&'a UniformBuffer; MAX_FRAMES_IN_FLIGHT],
+    pub texture: &'a Texture,
 }
 
 pub struct DescriptorSets {
@@ -162,7 +189,11 @@ impl DescriptorSets {
         let set1 = desc_sets.remove(0);
 
         for (i, s) in [&set0, &set1].iter().enumerate() {
-            s.bind_uniform_buffer(&self.vk_device, descriptor.uniform_buffers[i]);
+            s.bind_resources(
+                &self.vk_device,
+                descriptor.uniform_buffers[i],
+                descriptor.texture,
+            );
         }
 
         let handle0 = self.storage[0].add(set0);

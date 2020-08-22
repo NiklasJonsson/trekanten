@@ -3,7 +3,7 @@ use ash::vk;
 use crate::command::CommandPool;
 use crate::device::Device;
 use crate::mem::DeviceBuffer;
-use crate::mem::DeviceBufferError;
+use crate::mem::MemoryError;
 use crate::queue::Queue;
 use crate::resource::{Handle, Storage};
 
@@ -46,10 +46,10 @@ impl UniformBuffer {
         queue: &Queue,
         command_pool: &CommandPool,
         descriptor: &UniformBufferDescriptor<'a>,
-    ) -> Result<Self, DeviceBufferError> {
+    ) -> Result<Self, MemoryError> {
         let (buffer, elem_size, n_elems) = match descriptor {
             UniformBufferDescriptor::Initialized { data, elem_size } => (
-                DeviceBuffer::from_slice_staging(
+                DeviceBuffer::device_local_by_staging(
                     device,
                     queue,
                     command_pool,
@@ -60,7 +60,7 @@ impl UniformBuffer {
                 data.len() / elem_size,
             ),
             UniformBufferDescriptor::Uninitialized { elem_size, n_elems } => (
-                DeviceBuffer::new_empty(
+                DeviceBuffer::empty(
                     device,
                     elem_size * n_elems,
                     vk::BufferUsageFlags::UNIFORM_BUFFER,
@@ -78,7 +78,7 @@ impl UniformBuffer {
         })
     }
 
-    pub fn update_with<T>(&mut self, data: &T) -> Result<(), DeviceBufferError> {
+    pub fn update_with<T>(&mut self, data: &T) -> Result<(), MemoryError> {
         let raw_data = util::as_bytes(data);
         self.buffer.update_data_at(raw_data, 0)
     }
@@ -121,7 +121,7 @@ impl UniformBuffers {
         queue: &Queue,
         command_pool: &CommandPool,
         descriptor: &UniformBufferDescriptor<'a>,
-    ) -> Result<Handle<UniformBuffer>, DeviceBufferError> {
+    ) -> Result<Handle<UniformBuffer>, MemoryError> {
         let u_buffer0 = UniformBuffer::create(device, queue, command_pool, descriptor)?;
         let u_buffer1 = UniformBuffer::create(device, queue, command_pool, descriptor)?;
         let _ = self.storage[0].add(u_buffer0);

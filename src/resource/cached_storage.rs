@@ -26,13 +26,13 @@ where
         Default::default()
     }
 
-    pub fn create<Create>(
+    pub fn create_or_add<Create, Error>(
         &mut self,
         descriptor: ResourceDescriptor,
         create: Create,
-    ) -> Handle<Resource>
+    ) -> Result<Handle<Resource>, Error>
     where
-        Create: FnOnce(&ResourceDescriptor) -> Resource,
+        Create: FnOnce(&ResourceDescriptor) -> Result<Resource, Error>,
     {
         let h = match self.cache.get(&descriptor) {
             Some(h) => {
@@ -41,7 +41,8 @@ where
             }
             None => {
                 self.stats.misses += 1;
-                let h = self.storage.add(create(&descriptor));
+                let resource = create(&descriptor)?;
+                let h = self.storage.add(resource);
                 self.cache.add(descriptor, h);
                 h
             }
@@ -53,7 +54,7 @@ where
             self.stats.misses + self.stats.hits
         );
 
-        h
+        Ok(h)
     }
 
     pub fn get(&self, h: &Handle<Resource>) -> Option<&Resource> {

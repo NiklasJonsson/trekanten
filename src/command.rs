@@ -16,6 +16,8 @@ use crate::queue::QueueFamily;
 use crate::render_pass::RenderPass;
 use crate::util;
 
+// TODO: Merge errors
+
 #[derive(Debug)]
 pub enum CommandPoolError {
     Creation(vk::Result),
@@ -113,6 +115,12 @@ impl CommandPool {
             })
             .collect::<Vec<CommandBuffer>>())
     }
+
+    pub fn begin_single_submit(&self) -> Result<CommandBuffer, CommandPoolError> {
+        let buf = self.create_command_buffer()?;
+        buf.begin_single_submit()
+            .map_err(CommandPoolError::CommandBuffer)
+    }
 }
 
 #[derive(Debug)]
@@ -155,8 +163,8 @@ impl CommandBuffer {
         }
     }
 
-    pub fn vk_command_buffer(self) -> vk::CommandBuffer {
-        self.vk_cmd_buffer
+    pub fn vk_command_buffer(&self) -> &vk::CommandBuffer {
+        &self.vk_cmd_buffer
     }
 
     pub fn begin(
@@ -307,6 +315,7 @@ impl CommandBuffer {
         first_instance: u32,
     ) -> Self {
         assert!(self.queue_flags.contains(vk::QueueFlags::GRAPHICS));
+        }
         unsafe {
             self.vk_device.cmd_draw(
                 self.vk_cmd_buffer,
@@ -332,7 +341,7 @@ impl CommandBuffer {
         self
     }
 
-    pub fn copy_buffer(self, src: vk::Buffer, dst: vk::Buffer, size: usize) -> Self {
+    pub fn copy_buffer(self, src: &vk::Buffer, dst: &vk::Buffer, size: usize) -> Self {
         let info = vk::BufferCopy {
             src_offset: 0,
             dst_offset: 0,
@@ -341,7 +350,68 @@ impl CommandBuffer {
 
         unsafe {
             self.vk_device
-                .cmd_copy_buffer(self.vk_cmd_buffer, src, dst, &[info]);
+                .cmd_copy_buffer(self.vk_cmd_buffer, *src, *dst, &[info]);
+        }
+
+        self
+    }
+
+    pub fn copy_buffer_to_image(
+        self,
+        src: &vk::Buffer,
+        dst: &vk::Image,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        // TODO: Read this info from dst (by passing not just the vk::Image)
+        let info = vk::BufferImageCopy {
+            buffer_offset: 0,
+            // For e.g. padded rows
+            buffer_row_length: 0,
+            buffer_image_height: 0,
+            image_subresource: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+            image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+            image_extent: vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            },
+        };
+
+        unsafe {
+            self.vk_device.cmd_copy_buffer_to_image(
+                self.vk_cmd_buffer,
+                *src,
+                *dst,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[info],
+            );
+        }
+
+        self
+    }
+
+    pub fn pipeline_barrier(
+        self,
+        barrier: &vk::ImageMemoryBarrier,
+        src_stage: vk::PipelineStageFlags,
+        dst_stage: vk::PipelineStageFlags,
+    ) -> Self {
+        unsafe {
+            self.vk_device.cmd_pipeline_barrier(
+                self.vk_cmd_buffer,
+                src_stage,
+                dst_stage,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[*barrier],
+            );
         }
 
         self

@@ -12,7 +12,7 @@ use crate::device::Device;
 use crate::device::VkDeviceHandle;
 use crate::render_pass::RenderPass;
 use crate::resource::{Handle, Storage};
-use crate::spirv::{parse_descriptor_sets, DescriptorSetLayoutData, SpirvError};
+use crate::spirv::{parse_descriptor_sets, DescriptorSetLayouts, SpirvError};
 use crate::util;
 use crate::vertex::VertexDefinition;
 
@@ -205,7 +205,7 @@ pub struct GraphicsPipelineBuilder<'a> {
     vertex_input: Option<VertexInputDescription<'a>>,
     viewport_state: Option<vk::PipelineViewportStateCreateInfo>,
     render_pass: Option<&'a RenderPass>,
-    descriptor_sets: Vec<DescriptorSetLayoutData>,
+    refl_descriptor_set_layouts: DescriptorSetLayouts,
 }
 
 impl<'a> GraphicsPipelineBuilder<'a> {
@@ -219,7 +219,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             vertex_input: None,
             viewport_state: None,
             render_pass: None,
-            descriptor_sets: Vec::new(),
+            refl_descriptor_set_layouts: DescriptorSetLayouts::new(),
         }
     }
 
@@ -236,10 +236,10 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             .name(&self.entry_name)
             .build();
 
-        let mut new_desc_sets =
+        let new_desc_sets =
             parse_descriptor_sets(&raw.data).map_err(PipelineBuilderError::InvalidShader)?;
 
-        self.descriptor_sets.append(&mut new_desc_sets);
+        self.refl_descriptor_set_layouts.append(new_desc_sets);
 
         Ok(PipelineCreationInfo {
             create_info,
@@ -351,8 +351,8 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             .logic_op_enable(false)
             .attachments(&attachments);
 
-        let mut descriptor_set_layouts = Vec::with_capacity(self.descriptor_sets.len());
-        for dset in self.descriptor_sets.iter() {
+        let mut descriptor_set_layouts = Vec::with_capacity(self.refl_descriptor_set_layouts.len());
+        for dset in self.refl_descriptor_set_layouts.layouts() {
             let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&dset.bindings);
 
             let dset_layout = unsafe {

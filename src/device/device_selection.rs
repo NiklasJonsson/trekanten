@@ -153,6 +153,7 @@ fn device_supports_extensions<T: AsRef<CStr>>(
 pub enum DeviceSuitability {
     Suitable,
     MissingRequiredExtensions,
+    MissingRequiredFeatures,
     MissingGraphicsQueue,
     MissingPresentQueue,
     UnsuitableSwapchainFormat,
@@ -174,6 +175,27 @@ impl std::fmt::Display for DeviceSuitability {
     }
 }
 
+fn required_device_features() -> vk::PhysicalDeviceFeatures {
+    vk::PhysicalDeviceFeatures::builder()
+        .sampler_anisotropy(true)
+        .build()
+}
+
+// TODO: ash does not support struct eq for features :(
+fn device_supports_features(
+    instance: &Instance,
+    phys_device: &vk::PhysicalDevice,
+    _features: &vk::PhysicalDeviceFeatures,
+) -> bool {
+    let supported = unsafe {
+        instance
+            .vk_instance()
+            .get_physical_device_features(*phys_device)
+    };
+
+    supported.sampler_anisotropy == vk::TRUE
+}
+
 fn check_device_suitability(
     instance: &Instance,
     device: &vk::PhysicalDevice,
@@ -181,6 +203,10 @@ fn check_device_suitability(
 ) -> Result<DeviceSuitability, DeviceCreationError> {
     if !device_supports_extensions(instance, device, &required_device_extensions())? {
         return Ok(DeviceSuitability::MissingRequiredExtensions);
+    }
+
+    if !device_supports_features(instance, device, &required_device_features()) {
+        return Ok(DeviceSuitability::MissingRequiredFeatures);
     }
 
     let fams = find_queue_families(instance, device, surface)?;
@@ -334,10 +360,13 @@ pub fn device_selection(
     let extensions = required_device_extensions();
     let extensions_ptrs = util::ffi::vec_cstring_to_raw(extensions);
 
+    let features = vk::PhysicalDeviceFeatures::builder().sampler_anisotropy(true);
+
     let device_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_infos)
         .enabled_layer_names(&layers_ptrs)
-        .enabled_extension_names(&extensions_ptrs);
+        .enabled_extension_names(&extensions_ptrs)
+        .enabled_features(&features);
 
     let vk_device = unsafe {
         instance

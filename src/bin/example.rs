@@ -6,6 +6,7 @@ use nalgebra_glm as glm;
 
 use trekanten::mesh;
 use trekanten::pipeline;
+use trekanten::texture;
 use trekanten::uniform;
 use trekanten::window::Window;
 use trekanten::Handle;
@@ -15,6 +16,7 @@ use trekanten::ResourceManager;
 struct Vertex {
     pos: glm::Vec2,
     col: glm::Vec3,
+    tex_coord: glm::Vec2,
 }
 
 impl trekanten::vertex::VertexDefinition for Vertex {
@@ -39,6 +41,12 @@ impl trekanten::vertex::VertexDefinition for Vertex {
                 location: 1,
                 format: vk::Format::R32G32B32_SFLOAT,
                 offset: memoffset::offset_of!(Vertex, col) as u32,
+            },
+            vk::VertexInputAttributeDescription {
+                binding: 0,
+                location: 2,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: memoffset::offset_of!(Vertex, tex_coord) as u32,
             },
         ]
     }
@@ -66,18 +74,22 @@ fn vertices() -> Vec<Vertex> {
         Vertex {
             pos: glm::vec2(-0.5, -0.5),
             col: glm::vec3(1.0, 0.0, 0.0),
+            tex_coord: glm::vec2(0.0, 0.0),
         },
         Vertex {
             pos: glm::vec2(0.5, -0.5),
             col: glm::vec3(0.0, 1.0, 0.0),
+            tex_coord: glm::vec2(1.0, 0.0),
         },
         Vertex {
             pos: glm::vec2(0.5, 0.5),
             col: glm::vec3(0.0, 0.0, 1.0),
+            tex_coord: glm::vec2(1.0, 1.0),
         },
         Vertex {
             pos: glm::vec2(-0.5, 0.5),
             col: glm::vec3(1.0, 1.0, 1.0),
+            tex_coord: glm::vec2(0.0, 1.0),
         },
     ]
 }
@@ -101,7 +113,12 @@ fn get_next_mvp(start: &std::time::Instant) -> UniformBufferObject {
             &glm::vec3(0.0, 0.0, 0.0),
             &glm::vec3(0.0, 0.0, 1.0),
         ),
-        proj: glm::perspective(std::f32::consts::FRAC_PI_4, 1.0, 0.1, 10.0),
+        proj: glm::perspective(
+            std::f32::consts::FRAC_PI_4,
+            1.0, /* TODO: Proper aspect ratio */
+            0.1,
+            10.0,
+        ),
     };
 
     ubo.proj[(1, 1)] *= -1.0;
@@ -146,8 +163,18 @@ fn main() -> Result<(), trekanten::RenderError> {
         .create_resource(uniform_buffer_desc)
         .expect("Failed to create uniform buffer");
 
+    let texture_handle = renderer
+        .create_resource(texture::TextureDescriptor::new(
+            "textures/statue-1275469_640.jpg".into(),
+        ))
+        .expect("Failed to create texture");
+
     let desc_set_handle = renderer
-        .create_descriptor_set(&gfx_pipeline_handle, &uniform_buffer_handle)
+        .create_descriptor_set(
+            &gfx_pipeline_handle,
+            &uniform_buffer_handle,
+            &texture_handle,
+        )
         .expect("Failed to create descriptor set");
 
     let start = std::time::Instant::now();

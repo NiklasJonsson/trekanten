@@ -18,6 +18,7 @@ mod spirv;
 mod surface;
 mod swapchain;
 mod sync;
+pub mod texture;
 pub mod uniform;
 mod util;
 pub mod vertex;
@@ -98,7 +99,7 @@ impl Frame {
 
     pub fn add_command_buffer(&mut self, cmd_buffer: command::CommandBuffer) {
         self.recorded_command_buffers
-            .push(cmd_buffer.vk_command_buffer());
+            .push(*cmd_buffer.vk_command_buffer());
     }
 }
 
@@ -118,6 +119,7 @@ pub struct Renderer {
     index_buffers: resource::Storage<mesh::IndexBuffer>,
     uniform_buffers: uniform::UniformBuffers,
     descriptor_sets: descriptor::DescriptorSets,
+    textures: texture::Textures,
 
     swapchain: swapchain::Swapchain,
     swapchain_image_idx: u32, // TODO: Bake this into the swapchain?
@@ -225,6 +227,7 @@ impl Renderer {
             vertex_buffers: Default::default(),
             index_buffers: Default::default(),
             uniform_buffers: Default::default(),
+            textures: Default::default(),
             descriptor_sets,
             util_command_pool,
         })
@@ -370,7 +373,7 @@ impl Renderer {
         &mut self,
         h: &Handle<uniform::UniformBuffer>,
         data: &T,
-    ) -> Result<(), mem::DeviceBufferError> {
+    ) -> Result<(), mem::MemoryError> {
         let ubuf = self
             .uniform_buffers
             .get_mut(h, self.frame_idx as usize)
@@ -383,17 +386,21 @@ impl Renderer {
         &mut self,
         gfx_pipeline_handle: &Handle<pipeline::GraphicsPipeline>,
         uniform_buffer_handle: &Handle<uniform::UniformBuffer>,
+        texture_handle: &Handle<texture::Texture>,
     ) -> Result<Handle<descriptor::DescriptorSet>, RenderError> {
         let gfx_pipeline = self.get_resource(gfx_pipeline_handle).expect("FAIL");
-
         assert_eq!(gfx_pipeline.vk_descriptor_set_layouts().len(), 1);
+
         let uniform_buffers = self
             .uniform_buffers
             .get_all(uniform_buffer_handle)
             .ok_or(RenderError::MissingUniformBuffersForDescriptor)?;
+
+        let texture = self.textures.get(texture_handle).expect("FAIL");
         let descriptor = descriptor::DescriptorSetDescriptor {
             layout: gfx_pipeline.vk_descriptor_set_layouts()[0],
             uniform_buffers,
+            texture,
         };
 
         self.descriptor_sets
@@ -440,7 +447,7 @@ impl<'a>
     resource::ResourceManager<
         mesh::VertexBufferDescriptor<'a>,
         mesh::VertexBuffer,
-        mem::DeviceBufferError,
+        mem::MemoryError,
     > for Renderer
 {
     fn get_resource(&self, handle: &Handle<mesh::VertexBuffer>) -> Option<&mesh::VertexBuffer> {
@@ -450,7 +457,7 @@ impl<'a>
     fn create_resource(
         &mut self,
         descriptor: mesh::VertexBufferDescriptor<'a>,
-    ) -> Result<Handle<mesh::VertexBuffer>, mem::DeviceBufferError> {
+    ) -> Result<Handle<mesh::VertexBuffer>, mem::MemoryError> {
         let queue = self.device.util_queue();
         let new =
             mesh::VertexBuffer::create(&self.device, queue, &self.util_command_pool, &descriptor)?;
@@ -460,11 +467,8 @@ impl<'a>
 }
 
 impl<'a>
-    resource::ResourceManager<
-        mesh::IndexBufferDescriptor<'a>,
-        mesh::IndexBuffer,
-        mem::DeviceBufferError,
-    > for Renderer
+    resource::ResourceManager<mesh::IndexBufferDescriptor<'a>, mesh::IndexBuffer, mem::MemoryError>
+    for Renderer
 {
     fn get_resource(&self, handle: &Handle<mesh::IndexBuffer>) -> Option<&mesh::IndexBuffer> {
         self.index_buffers.get(handle)
@@ -473,7 +477,7 @@ impl<'a>
     fn create_resource(
         &mut self,
         descriptor: mesh::IndexBufferDescriptor<'a>,
-    ) -> Result<Handle<mesh::IndexBuffer>, mem::DeviceBufferError> {
+    ) -> Result<Handle<mesh::IndexBuffer>, mem::MemoryError> {
         let queue = self.device.util_queue();
         let new =
             mesh::IndexBuffer::create(&self.device, queue, &self.util_command_pool, &descriptor)?;
@@ -486,7 +490,7 @@ impl<'a>
     resource::ResourceManager<
         uniform::UniformBufferDescriptor<'a>,
         uniform::UniformBuffer,
-        mem::DeviceBufferError,
+        mem::MemoryError,
     > for Renderer
 {
     fn get_resource(
@@ -499,9 +503,27 @@ impl<'a>
     fn create_resource(
         &mut self,
         descriptor: uniform::UniformBufferDescriptor<'a>,
-    ) -> Result<Handle<uniform::UniformBuffer>, mem::DeviceBufferError> {
+    ) -> Result<Handle<uniform::UniformBuffer>, mem::MemoryError> {
         let queue = self.device.util_queue();
         self.uniform_buffers
             .create(&self.device, queue, &self.util_command_pool, &descriptor)
+    }
+}
+
+impl<'a>
+    resource::ResourceManager<texture::TextureDescriptor, texture::Texture, texture::TextureError>
+    for Renderer
+{
+    fn get_resource(&self, handle: &Handle<texture::Texture>) -> Option<&texture::Texture> {
+        self.textures.get(handle)
+    }
+
+    fn create_resource(
+        &mut self,
+        descriptor: texture::TextureDescriptor,
+    ) -> Result<Handle<texture::Texture>, texture::TextureError> {
+        let queue = self.device.util_queue();
+        self.textures
+            .create(&self.device, queue, &self.util_command_pool, descriptor)
     }
 }

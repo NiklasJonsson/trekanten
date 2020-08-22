@@ -9,18 +9,19 @@ use crate::device::Device;
 use crate::device::VkDeviceHandle;
 use crate::queue::Queue;
 use crate::queue::QueueError;
-use crate::sync::Fence;
-use crate::sync::FenceError;
+use crate::util;
 
 #[derive(Debug)]
 pub enum MemoryError {
     BufferCreation(vk::Result),
+    ImageCreation(vk::Result),
     Allocation(vk::Result),
     BufferBinding(vk::Result),
+    ImageBinding(vk::Result),
     CopyCommandPool(CommandPoolError),
     CopyCommandBuffer(CommandBufferError),
-    CopySync(FenceError),
     CopySubmit(QueueError),
+    MemoryMapping(vk::Result),
 }
 
 impl std::error::Error for MemoryError {}
@@ -48,23 +49,28 @@ fn find_memory_type(
     None
 }
 
-#[derive(Debug)]
-pub enum DeviceBufferError {
-    Memory(MemoryError),
-    MemoryMapping(vk::Result),
-}
+fn alloc_memory(
+    device: &Device,
+    mem_reqs: vk::MemoryRequirements,
+    mem_props: vk::MemoryPropertyFlags,
+) -> Result<vk::DeviceMemory, MemoryError> {
+    let vk_device = device.vk_device();
+    let memory_type_index = find_memory_type(device, mem_reqs.memory_type_bits, mem_props)
+        .expect("Failed to find appropriate memory type");
 
-impl std::error::Error for DeviceBufferError {}
-impl std::fmt::Display for DeviceBufferError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
+    let alloc_info = vk::MemoryAllocateInfo {
+        allocation_size: mem_reqs.size,
+        memory_type_index,
+        ..Default::default()
+    };
 
-impl From<MemoryError> for DeviceBufferError {
-    fn from(e: MemoryError) -> Self {
-        Self::Memory(e)
-    }
+    let device_memory = unsafe {
+        vk_device
+            .allocate_memory(&alloc_info, None)
+            .map_err(MemoryError::Allocation)?
+    };
+
+    Ok(device_memory)
 }
 
 pub struct DeviceBuffer {
@@ -72,10 +78,11 @@ pub struct DeviceBuffer {
     buffer: vk::Buffer,
     device_memory: vk::DeviceMemory,
     is_host_avail: bool,
+    size: usize,
 }
 
 impl DeviceBuffer {
-    pub fn new_empty(
+    pub fn empty(
         device: &Device,
         size: usize,
         usage_flags: vk::BufferUsageFlags,
@@ -96,21 +103,7 @@ impl DeviceBuffer {
         };
 
         let mem_reqs = unsafe { vk_device.get_buffer_memory_requirements(buffer) };
-
-        let memory_type_index = find_memory_type(device, mem_reqs.memory_type_bits, properties)
-            .expect("Failed to find appropriate memory type");
-
-        let alloc_info = vk::MemoryAllocateInfo {
-            allocation_size: mem_reqs.size,
-            memory_type_index,
-            ..Default::default()
-        };
-
-        let device_memory = unsafe {
-            vk_device
-                .allocate_memory(&alloc_info, None)
-                .map_err(MemoryError::Allocation)?
-        };
+        let device_memory = alloc_memory(device, mem_reqs, properties)?;
 
         unsafe {
             vk_device
@@ -127,25 +120,24 @@ impl DeviceBuffer {
             buffer,
             device_memory,
             is_host_avail,
+            size,
         })
     }
 
-    pub fn from_slice_staging<V>(
-        device: &Device,
-        queue: &Queue,
-        command_pool: &CommandPool,
-        usage: vk::BufferUsageFlags,
-        slice: &[V],
-    ) -> Result<Self, DeviceBufferError> {
-        let vk_device = device.vk_device();
-        let size = std::mem::size_of::<V>() * slice.len();
-
-        let staging = DeviceBuffer::new_empty(
+    pub fn staging_empty(device: &Device, size: usize) -> Result<Self, MemoryError> {
+        DeviceBuffer::empty(
             device,
             size,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        )?;
+        )
+    }
+
+    pub fn staging_with_data(device: &Device, data: &[u8]) -> Result<Self, MemoryError> {
+        let vk_device = device.vk_device();
+        let size = data.len();
+
+        let staging = DeviceBuffer::staging_empty(device, size)?;
 
         unsafe {
             let mapped_ptr = vk_device
@@ -155,27 +147,38 @@ impl DeviceBuffer {
                     size as u64,
                     vk::MemoryMapFlags::empty(),
                 )
-                .map_err(DeviceBufferError::MemoryMapping)?;
-            let src = slice.as_ptr() as *const u8;
+                .map_err(MemoryError::MemoryMapping)?;
+            let src = data.as_ptr() as *const u8;
             let dst = mapped_ptr as *mut u8;
             std::ptr::copy_nonoverlapping::<u8>(src, dst, size);
             vk_device.unmap_memory(staging.device_memory);
         }
 
-        let dst_buffer = Self::new_empty(
+        Ok(staging)
+    }
+
+    pub fn device_local_by_staging(
+        device: &Device,
+        queue: &Queue,
+        command_pool: &CommandPool,
+        usage: vk::BufferUsageFlags,
+        data: &[u8],
+    ) -> Result<Self, MemoryError> {
+        let staging = Self::staging_with_data(device, data)?;
+
+        let dst_buffer = Self::empty(
             device,
-            size,
+            staging.size,
             vk::BufferUsageFlags::TRANSFER_DST | usage,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         )?;
 
         copy_buffer(
-            device,
             queue,
             command_pool,
-            staging.buffer,
-            dst_buffer.buffer,
-            size,
+            &staging.buffer,
+            &dst_buffer.buffer,
+            staging.size,
         )?;
 
         Ok(dst_buffer)
@@ -185,7 +188,7 @@ impl DeviceBuffer {
         &self.buffer
     }
 
-    pub fn update_data_at(&mut self, data: &[u8], offset: usize) -> Result<(), DeviceBufferError> {
+    pub fn update_data_at(&mut self, data: &[u8], offset: usize) -> Result<(), MemoryError> {
         assert!(self.is_host_avail);
         let size = data.len();
         unsafe {
@@ -197,7 +200,7 @@ impl DeviceBuffer {
                     size as vk::DeviceSize,
                     vk::MemoryMapFlags::empty(),
                 )
-                .map_err(DeviceBufferError::MemoryMapping)?;
+                .map_err(MemoryError::MemoryMapping)?;
             let src = data.as_ptr() as *const u8;
             let dst = mapped_ptr as *mut u8;
             std::ptr::copy_nonoverlapping::<u8>(src, dst, size);
@@ -217,34 +220,209 @@ impl std::ops::Drop for DeviceBuffer {
     }
 }
 
-pub fn copy_buffer(
-    device: &Device,
+fn copy_buffer(
     queue: &Queue,
     command_pool: &CommandPool,
-    src: vk::Buffer,
-    dst: vk::Buffer,
+    src: &vk::Buffer,
+    dst: &vk::Buffer,
     size: usize,
 ) -> Result<(), MemoryError> {
     let cmd_buf = command_pool
-        .create_command_buffer()
-        .map_err(MemoryError::CopyCommandPool)?;
-    let vk_cmd_buf = cmd_buf
         .begin_single_submit()
-        .map_err(MemoryError::CopyCommandBuffer)?
-        .copy_buffer(src, dst, size)
+        .map_err(MemoryError::CopyCommandPool)?
+        .copy_buffer(&src, &dst, size)
         .end()
-        .map_err(MemoryError::CopyCommandBuffer)?
-        .vk_command_buffer();
+        .map_err(MemoryError::CopyCommandBuffer)?;
 
-    let bufs = [vk_cmd_buf];
-    let submit_info = vk::SubmitInfo::builder().command_buffers(&bufs);
-
-    let copied = Fence::unsignaled(device).map_err(MemoryError::CopySync)?;
     queue
-        .submit(&submit_info, &copied)
-        .map_err(MemoryError::CopySubmit)?;
+        .submit_and_wait(&cmd_buf)
+        .map_err(MemoryError::CopySubmit)
+}
 
-    // TODO: Async
-    copied.blocking_wait().map_err(MemoryError::CopySync)?;
-    Ok(())
+fn transition_image_layout(
+    queue: &Queue,
+    command_pool: &CommandPool,
+    vk_image: &vk::Image,
+    _vk_format: vk::Format,
+    old_layout: vk::ImageLayout,
+    new_layout: vk::ImageLayout,
+) -> Result<(), MemoryError> {
+    // Note: The barrier below does not really matter at the moment as we wait on the fence
+    // directly after submitting. If the code is used elsewhere, it makes the following
+    // assumptions:
+    // * The image is only read in the fragment shader
+    // * The image has no mip map levels
+    // * The image is not an image array
+    // * The image is only used in one queue
+
+    let (src_mask, src_stage, dst_mask, dst_stage) = match (old_layout, new_layout) {
+        (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
+            vk::AccessFlags::empty(),
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::PipelineStageFlags::TRANSFER,
+        ),
+        (vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::AccessFlags::SHADER_READ,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+        ),
+        _ => unimplemented!(),
+    };
+
+    let barrier = vk::ImageMemoryBarrier {
+        old_layout,
+        new_layout,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        image: *vk_image,
+        subresource_range: vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        },
+        src_access_mask: src_mask,
+        dst_access_mask: dst_mask,
+        ..Default::default()
+    };
+
+    let cmd_buf = command_pool
+        .begin_single_submit()
+        .map_err(MemoryError::CopyCommandPool)?
+        .pipeline_barrier(&barrier, src_stage, dst_stage)
+        .end()
+        .map_err(MemoryError::CopyCommandBuffer)?;
+
+    queue
+        .submit_and_wait(&cmd_buf)
+        .map_err(MemoryError::CopySubmit)
+}
+
+fn copy_buffer_to_image(
+    queue: &Queue,
+    command_pool: &CommandPool,
+    src: &vk::Buffer,
+    dst: &vk::Image,
+    width: u32,
+    height: u32,
+) -> Result<(), MemoryError> {
+    let cmd_buf = command_pool
+        .begin_single_submit()
+        .map_err(MemoryError::CopyCommandPool)?
+        .copy_buffer_to_image(src, dst, width, height)
+        .end()
+        .map_err(MemoryError::CopyCommandBuffer)?;
+
+    queue
+        .submit_and_wait(&cmd_buf)
+        .map_err(MemoryError::CopySubmit)
+}
+
+pub struct DeviceImage {
+    vk_device: VkDeviceHandle,
+    vk_image: vk::Image,
+    device_memory: vk::DeviceMemory,
+}
+
+impl DeviceImage {
+    // Use this for device local image sampling from e.g. shaders
+    // Get's its values from a copy from a staging buffer
+    fn empty_dst_2d(
+        device: &Device,
+        extents: util::Extent2D,
+        format: util::Format,
+    ) -> Result<Self, MemoryError> {
+        let extents3d = util::Extent3D::from_2d(extents, 1);
+        let info = vk::ImageCreateInfo::builder()
+            .image_type(vk::ImageType::TYPE_2D)
+            .extent(extents3d.into())
+            .mip_levels(1)
+            .array_layers(1)
+            .format(format.into())
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .samples(vk::SampleCountFlags::TYPE_1);
+
+        let vk_device = device.vk_device();
+        let vk_image = unsafe {
+            vk_device
+                .create_image(&info, None)
+                .map_err(MemoryError::ImageCreation)?
+        };
+
+        let mem_reqs = unsafe { vk_device.get_image_memory_requirements(vk_image) };
+
+        let device_memory = alloc_memory(device, mem_reqs, vk::MemoryPropertyFlags::DEVICE_LOCAL)?;
+
+        unsafe {
+            vk_device
+                .bind_image_memory(vk_image, device_memory, 0)
+                .map_err(MemoryError::ImageBinding)?;
+        };
+
+        Ok(Self {
+            vk_device,
+            vk_image,
+            device_memory,
+        })
+    }
+
+    pub fn device_local_by_staging(
+        device: &Device,
+        queue: &Queue,
+        command_pool: &CommandPool,
+        extents: util::Extent2D,
+        format: util::Format,
+        data: &[u8],
+    ) -> Result<Self, MemoryError> {
+        let staging = DeviceBuffer::staging_with_data(device, data)?;
+        let dst_image = Self::empty_dst_2d(device, extents, format)?;
+        // Bake into empty_dst_2d?
+        transition_image_layout(
+            queue,
+            command_pool,
+            &dst_image.vk_image,
+            format.into(),
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        )?;
+
+        copy_buffer_to_image(
+            queue,
+            command_pool,
+            &staging.buffer,
+            &dst_image.vk_image,
+            extents.width,
+            extents.height,
+        )?;
+
+        transition_image_layout(
+            queue,
+            command_pool,
+            &dst_image.vk_image,
+            format.into(),
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        )?;
+
+        Ok(dst_image)
+    }
+
+    pub fn vk_image(&self) -> &vk::Image {
+        &self.vk_image
+    }
+}
+
+impl std::ops::Drop for DeviceImage {
+    fn drop(&mut self) {
+        unsafe {
+            self.vk_device.destroy_image(self.vk_image, None);
+            self.vk_device.free_memory(self.device_memory, None);
+        }
+    }
 }
