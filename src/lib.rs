@@ -161,9 +161,9 @@ fn create_swapchain_and_co(
     device: &device::Device,
     surface: &surface::Surface,
     extent: &util::Extent2D,
-    _old: Option<&swapchain::Swapchain>,
+    old: Option<&swapchain::Swapchain>,
 ) -> Result<SwapchainAndCo, RenderError> {
-    let swapchain = swapchain::Swapchain::new(&instance, &device, &surface, &extent)?;
+    let swapchain = swapchain::Swapchain::new(&instance, &device, &surface, &extent, old)?;
     let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)?;
 
     let image_to_frame_idx: Vec<Option<u32>> = (0..swapchain.num_images()).map(|_| None).collect();

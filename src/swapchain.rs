@@ -124,6 +124,7 @@ impl Swapchain {
         device: &Device,
         surface: &Surface,
         extent: &util::Extent2D,
+        old: Option<&Self>,
     ) -> Result<Self, SwapchainError> {
         let query = surface.query_swapchain_support(device.vk_phys_device())?;
         log::trace!("Creating swapchain");
@@ -163,12 +164,14 @@ impl Swapchain {
                 .queue_family_indices(&[]); // optional
         }
 
+        let old_handle = old.map(|v| v.handle).unwrap_or(vk::SwapchainKHR::null());
+
         let info = builder
             .pre_transform(query.capabilites.current_transform)
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
             .present_mode(present_mode)
             .clipped(true)
-            .old_swapchain(vk::SwapchainKHR::null())
+            .old_swapchain(old_handle)
             .build();
 
         log::trace!("Creating swapchain with info: {:#?}", info);
