@@ -5,7 +5,7 @@ use crate::device::Device;
 use crate::mem::DeviceBuffer;
 use crate::mem::MemoryError;
 use crate::queue::Queue;
-use crate::resource::{Handle, Storage};
+use crate::resource::{BufferedStorage, Handle};
 
 use crate::common::MAX_FRAMES_IN_FLIGHT;
 
@@ -102,16 +102,13 @@ impl UniformBuffer {
 
 #[derive(Default)]
 pub struct UniformBuffers {
-    storage: [Storage<UniformBuffer>; MAX_FRAMES_IN_FLIGHT],
+    storage: BufferedStorage<UniformBuffer>,
 }
 
 impl UniformBuffers {
     pub fn new() -> Self {
         Self {
-            storage: [
-                Storage::<UniformBuffer>::new(),
-                Storage::<UniformBuffer>::new(),
-            ],
+            storage: Default::default(),
         }
     }
 
@@ -124,22 +121,18 @@ impl UniformBuffers {
     ) -> Result<Handle<UniformBuffer>, MemoryError> {
         let u_buffer0 = UniformBuffer::create(device, queue, command_pool, descriptor)?;
         let u_buffer1 = UniformBuffer::create(device, queue, command_pool, descriptor)?;
-        let _ = self.storage[0].add(u_buffer0);
-        Ok(self.storage[1].add(u_buffer1))
+        Ok(self.storage.add([u_buffer0, u_buffer1]))
     }
 
     pub fn get(&self, h: &Handle<UniformBuffer>, frame_idx: usize) -> Option<&UniformBuffer> {
-        self.storage[frame_idx].get(h)
+        self.storage.get(h, frame_idx)
     }
 
     pub fn get_all(
         &self,
         h: &Handle<UniformBuffer>,
-    ) -> Option<[&UniformBuffer; MAX_FRAMES_IN_FLIGHT]> {
-        let buf0 = self.storage[0].get(h)?;
-        let buf1 = self.storage[1].get(h)?;
-
-        Some([buf0, buf1])
+    ) -> Option<&[UniformBuffer; MAX_FRAMES_IN_FLIGHT]> {
+        self.storage.get_all(h)
     }
 
     pub fn get_mut(
@@ -147,6 +140,6 @@ impl UniformBuffers {
         h: &Handle<UniformBuffer>,
         frame_idx: usize,
     ) -> Option<&mut UniformBuffer> {
-        self.storage[frame_idx].get_mut(h)
+        self.storage.get_mut(h, frame_idx)
     }
 }

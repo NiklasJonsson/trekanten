@@ -5,7 +5,7 @@ use ash::version::DeviceV1_0;
 use crate::device::AsVkDevice;
 use crate::device::Device;
 use crate::device::VkDeviceHandle;
-use crate::resource::{Handle, Storage};
+use crate::resource::{BufferedStorage, Handle};
 use crate::texture::Texture;
 use crate::uniform::UniformBuffer;
 
@@ -156,14 +156,14 @@ impl DescriptorSet {
 
 pub struct DescriptorSetDescriptor<'a> {
     pub layout: vk::DescriptorSetLayout,
-    pub uniform_buffers: [&'a UniformBuffer; MAX_FRAMES_IN_FLIGHT],
+    pub uniform_buffers: &'a [UniformBuffer; MAX_FRAMES_IN_FLIGHT],
     pub texture: &'a Texture,
 }
 
 pub struct DescriptorSets {
     vk_device: VkDeviceHandle,
     descriptor_pool: DescriptorPool,
-    storage: [Storage<DescriptorSet>; MAX_FRAMES_IN_FLIGHT],
+    storage: BufferedStorage<DescriptorSet>,
 }
 
 impl DescriptorSets {
@@ -171,10 +171,7 @@ impl DescriptorSets {
         Self {
             vk_device: device.vk_device(),
             descriptor_pool: DescriptorPool::new(device),
-            storage: [
-                Storage::<DescriptorSet>::new(),
-                Storage::<DescriptorSet>::new(),
-            ],
+            storage: Default::default(),
         }
     }
 
@@ -191,18 +188,15 @@ impl DescriptorSets {
         for (i, s) in [&set0, &set1].iter().enumerate() {
             s.bind_resources(
                 &self.vk_device,
-                descriptor.uniform_buffers[i],
+                &descriptor.uniform_buffers[i],
                 descriptor.texture,
             );
         }
 
-        let handle0 = self.storage[0].add(set0);
-        let _handle1 = self.storage[1].add(set1);
-
-        Ok(handle0)
+        Ok(self.storage.add([set0, set1]))
     }
 
     pub fn get(&self, h: &Handle<DescriptorSet>, frame_idx: usize) -> Option<&DescriptorSet> {
-        self.storage[frame_idx].get(h)
+        self.storage.get(h, frame_idx)
     }
 }
