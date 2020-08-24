@@ -11,9 +11,11 @@ use trekanten::uniform;
 use trekanten::window::Window;
 use trekanten::Handle;
 use trekanten::ResourceManager;
+use trekanten::vertex::Vertex;
 
+#[derive(Vertex)]
 #[repr(C, packed)]
-struct Vertex {
+struct VertexTy {
     pos: glm::Vec2,
     col: glm::Vec3,
     tex_coord: glm::Vec2,
