@@ -1,5 +1,11 @@
 use crate::*;
 
+#[derive(Debug, Clone, Copy)]
+pub enum ResizeReason {
+    OutOfDate,
+    SubOptimal,
+}
+
 #[derive(Debug)]
 pub enum RenderError {
     CommandBuffer(command::CommandBufferError),
@@ -16,7 +22,7 @@ pub enum RenderError {
     Queue(queue::QueueError),
     VertexBuffer(mem::MemoryError),
     IndexBuffer(mem::MemoryError),
-    NeedsResize,
+    NeedsResize(ResizeReason),
     MissingUniformBuffersForDescriptor,
     DescriptorSet(descriptor::DescriptorSetError),
 }

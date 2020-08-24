@@ -25,6 +25,7 @@ pub mod vertex;
 pub mod window;
 
 pub use error::RenderError;
+pub use error::ResizeReason;
 pub use resource::Handle;
 pub use resource::ResourceManager;
 
@@ -242,7 +243,7 @@ impl Renderer {
             .acquire_next_image(Some(&frame_sync.image_available))
             .map_err(|e| {
                 if let swapchain::SwapchainError::OutOfDate = e {
-                    RenderError::NeedsResize
+                    RenderError::NeedsResize(ResizeReason::OutOfDate)
                 } else {
                     RenderError::Swapchain(e)
                 }
@@ -307,14 +308,14 @@ impl Renderer {
             .enqueue_present(self.device.present_queue(), present_info.build())
             .map_err(|e| {
                 if let swapchain::SwapchainError::OutOfDate = e {
-                    RenderError::NeedsResize
+                    RenderError::NeedsResize(ResizeReason::OutOfDate)
                 } else {
                     RenderError::Swapchain(e)
                 }
             })?;
 
         if let swapchain::SwapchainStatus::SubOptimal = status {
-            return Err(RenderError::NeedsResize);
+            return Err(RenderError::NeedsResize(ResizeReason::SubOptimal));
         }
 
         self.frame_idx = (self.frame_idx + 1) % MAX_FRAMES_IN_FLIGHT as u32;

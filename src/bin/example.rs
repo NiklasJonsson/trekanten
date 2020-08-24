@@ -180,7 +180,8 @@ fn main() -> Result<(), trekanten::RenderError> {
         }
 
         let mut frame = match renderer.next_frame() {
-            Err(trekanten::RenderError::NeedsResize) => {
+            Err(trekanten::RenderError::NeedsResize(reason)) => {
+                log::info!("Resize reason: {:?}", reason);
                 renderer.resize(window.extents())?;
                 renderer.next_frame()
             }
@@ -224,7 +225,8 @@ fn main() -> Result<(), trekanten::RenderError> {
         frame.add_command_buffer(cmd_buf);
 
         renderer.submit(frame).or_else(|e| {
-            if let trekanten::RenderError::NeedsResize = e {
+            if let trekanten::RenderError::NeedsResize(reason) = e {
+                log::info!("Resize reason: {:?}", reason);
                 renderer.resize(window.extents())
             } else {
                 Err(e)
