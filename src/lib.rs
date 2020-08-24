@@ -2,6 +2,7 @@ use ash::vk;
 
 mod command;
 mod common;
+mod depth_buffer;
 mod descriptor;
 mod device;
 mod error;
@@ -109,11 +110,6 @@ pub const WINDOW_HEIGHT: u32 = 300;
 pub const WINDOW_WIDTH: u32 = 300;
 
 pub struct Renderer {
-    // Swapchain-related
-    // TODO: Could render pass be a abstracted as forward-renderer?
-    render_pass: render_pass::RenderPass,
-    swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
-
     // Resources
     graphics_pipelines: pipeline::GraphicsPipelines,
     vertex_buffers: resource::Storage<mesh::VertexBuffer>,
@@ -122,6 +118,11 @@ pub struct Renderer {
     descriptor_sets: descriptor::DescriptorSets,
     textures: texture::Textures,
 
+    // Swapchain-related
+    // TODO: Could render pass be a abstracted as forward-renderer?
+    render_pass: render_pass::RenderPass,
+    swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
+    depth_buffer: depth_buffer::DepthBuffer,
     swapchain: swapchain::Swapchain,
     swapchain_image_idx: u32, // TODO: Bake this into the swapchain?
     image_to_frame_idx: Vec<Option<u32>>,
@@ -152,6 +153,7 @@ impl std::ops::Drop for Renderer {
 // Result holder struct
 struct SwapchainAndCo {
     swapchain: swapchain::Swapchain,
+    depth_buffer: depth_buffer::DepthBuffer,
     swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
     image_to_frame_idx: Vec<Option<u32>>,
     render_pass: render_pass::RenderPass,
@@ -168,11 +170,13 @@ fn create_swapchain_and_co(
     let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)?;
 
     let image_to_frame_idx: Vec<Option<u32>> = (0..swapchain.num_images()).map(|_| None).collect();
-    let swapchain_framebuffers = swapchain.create_framebuffers_for(&render_pass)?;
+    let depth_buffer = depth_buffer::DepthBuffer::new(device, extent).expect("FAIL");
+    let swapchain_framebuffers = swapchain.create_framebuffers_for(&render_pass, &depth_buffer)?;
 
     Ok(SwapchainAndCo {
         swapchain,
         swapchain_framebuffers,
+        depth_buffer,
         image_to_frame_idx,
         render_pass,
     })
@@ -198,6 +202,7 @@ impl Renderer {
         let SwapchainAndCo {
             swapchain,
             swapchain_framebuffers,
+            depth_buffer,
             image_to_frame_idx,
             render_pass,
         } = create_swapchain_and_co(&instance, &device, &surface, &extent, None)?;
@@ -219,6 +224,7 @@ impl Renderer {
             image_to_frame_idx,
             render_pass,
             swapchain_framebuffers,
+            depth_buffer,
             frame_synchronization,
             frame_idx: 0,
             frames,
@@ -356,6 +362,7 @@ impl Renderer {
         let SwapchainAndCo {
             swapchain,
             swapchain_framebuffers,
+            depth_buffer,
             image_to_frame_idx,
             render_pass,
         } = create_swapchain_and_co(
@@ -368,6 +375,7 @@ impl Renderer {
 
         self.swapchain = swapchain;
         self.swapchain_framebuffers = swapchain_framebuffers;
+        self.depth_buffer = depth_buffer;
         self.image_to_frame_idx = image_to_frame_idx;
         self.render_pass = render_pass;
 

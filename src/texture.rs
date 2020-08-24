@@ -123,10 +123,7 @@ impl Texture {
             height: image.height(),
         };
 
-        let format = util::Format {
-            color_space: util::ColorSpace::Srgb,
-            component_layout: util::ComponentLayout::R8G8B8A8,
-        };
+        let format: util::Format = vk::Format::R8G8B8A8_SRGB.into();
 
         let raw_image_data = image.into_raw();
         let device_image = DeviceImage::device_local_by_staging(
@@ -139,7 +136,9 @@ impl Texture {
         )
         .map_err(TextureError::Memory)?;
 
-        let image_view = ImageView::new(device, device_image.vk_image(), format.into())
+        let aspect = vk::ImageAspectFlags::COLOR;
+
+        let image_view = ImageView::new(device, device_image.vk_image(), format.into(), aspect)
             .expect("Failed to create image view");
 
         let sampler = Sampler::new(device)?;

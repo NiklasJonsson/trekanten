@@ -209,12 +209,6 @@ impl CommandBuffer {
         framebuffer: &Framebuffer,
         extent: util::Extent2D,
     ) -> Self {
-        let clear_values = [vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.0, 0.0, 0.0, 1.0],
-            },
-        }];
-
         let info = vk::RenderPassBeginInfo::builder()
             .render_pass(*render_pass.vk_render_pass())
             .framebuffer(*framebuffer.vk_framebuffer())
@@ -222,7 +216,7 @@ impl CommandBuffer {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: extent.into(),
             })
-            .clear_values(&clear_values);
+            .clear_values(render_pass.vk_clear_values());
 
         unsafe {
             self.vk_device.cmd_begin_render_pass(

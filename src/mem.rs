@@ -328,13 +328,18 @@ pub struct DeviceImage {
 }
 
 impl DeviceImage {
-    // Use this for device local image sampling from e.g. shaders
-    // Get's its values from a copy from a staging buffer
-    fn empty_dst_2d(
+    pub fn empty_2d(
         device: &Device,
         extents: util::Extent2D,
         format: util::Format,
+        usage: vk::ImageUsageFlags,
+        memory_properties: vk::MemoryPropertyFlags,
     ) -> Result<Self, MemoryError> {
+        log::trace!("Creating empty DeviceImage with:");
+        log::trace!("\textents: {}", extents);
+        log::trace!("\tformat: {:?}", format);
+        log::trace!("\tmemory properties: {:?}", memory_properties);
+
         let extents3d = util::Extent3D::from_2d(extents, 1);
         let info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
@@ -344,7 +349,7 @@ impl DeviceImage {
             .format(format.into())
             .tiling(vk::ImageTiling::OPTIMAL)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+            .usage(usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .samples(vk::SampleCountFlags::TYPE_1);
 
@@ -357,7 +362,7 @@ impl DeviceImage {
 
         let mem_reqs = unsafe { vk_device.get_image_memory_requirements(vk_image) };
 
-        let device_memory = alloc_memory(device, mem_reqs, vk::MemoryPropertyFlags::DEVICE_LOCAL)?;
+        let device_memory = alloc_memory(device, mem_reqs, memory_properties)?;
 
         unsafe {
             vk_device
@@ -381,8 +386,14 @@ impl DeviceImage {
         data: &[u8],
     ) -> Result<Self, MemoryError> {
         let staging = DeviceBuffer::staging_with_data(device, data)?;
-        let dst_image = Self::empty_dst_2d(device, extents, format)?;
-        // Bake into empty_dst_2d?
+        let dst_image = Self::empty_2d(
+            device,
+            extents,
+            format,
+            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )?;
+
         transition_image_layout(
             queue,
             command_pool,

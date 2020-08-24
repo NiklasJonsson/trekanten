@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::device::AsVkDevice;
 use crate::device::VkDevice;
+use crate::util;
 
 #[derive(Debug, Clone)]
 pub enum ImageViewError {
@@ -35,8 +36,10 @@ impl ImageView {
     pub fn new<D: AsVkDevice>(
         device: &D,
         vk_image: &vk::Image,
-        format: vk::Format,
+        format: util::Format,
+        aspect_mask: vk::ImageAspectFlags,
     ) -> Result<Self, ImageViewError> {
+        let vk_format = format.into();
         let comp_mapping = vk::ComponentMapping {
             r: vk::ComponentSwizzle::R,
             g: vk::ComponentSwizzle::G,
@@ -45,7 +48,7 @@ impl ImageView {
         };
 
         let subresource_range = vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
+            aspect_mask,
             base_mip_level: 0,
             level_count: 1,
             base_array_layer: 0,
@@ -55,7 +58,7 @@ impl ImageView {
         let info = vk::ImageViewCreateInfo::builder()
             .image(*vk_image)
             .view_type(vk::ImageViewType::TYPE_2D)
-            .format(format)
+            .format(vk_format)
             .components(comp_mapping)
             .subresource_range(subresource_range);
 

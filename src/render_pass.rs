@@ -22,6 +22,7 @@ impl std::fmt::Display for RenderPassError {
 pub struct RenderPass {
     vk_device: Rc<VkDevice>,
     vk_render_pass: vk::RenderPass,
+    vk_clear_values: [vk::ClearValue; 2],
 }
 
 impl std::ops::Drop for RenderPass {
@@ -35,7 +36,7 @@ impl std::ops::Drop for RenderPass {
 
 impl RenderPass {
     pub fn new(device: &Device, format: vk::Format) -> Result<Self, RenderPassError> {
-        let color_attach_format = vk::AttachmentDescription::builder()
+        let color_attach = vk::AttachmentDescription::builder()
             .format(format)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
@@ -50,13 +51,29 @@ impl RenderPass {
             layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         };
 
+        let depth_attach = vk::AttachmentDescription::builder()
+            .format(device.depth_buffer_format())
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+        let depth_attach_ref = vk::AttachmentReference {
+            attachment: 1,
+            layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        };
+
         let color_attach_refs = &[color_attach_ref];
 
         let subpass = vk::SubpassDescription::builder()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(color_attach_refs);
+            .color_attachments(color_attach_refs)
+            .depth_stencil_attachment(&depth_attach_ref);
 
-        let attachments = [*color_attach_format];
+        let attachments = [*color_attach, *depth_attach];
         let subpasses = [*subpass];
 
         let subpass_dependency = vk::SubpassDependency::builder()
@@ -82,10 +99,29 @@ impl RenderPass {
                 .map_err(RenderPassError::Creation)?
         };
 
+        let vk_clear_values = [
+            vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            },
+            vk::ClearValue {
+                depth_stencil: vk::ClearDepthStencilValue {
+                    depth: 1.0,
+                    stencil: 0,
+                },
+            },
+        ];
+
         Ok(Self {
             vk_device,
             vk_render_pass,
+            vk_clear_values,
         })
+    }
+
+    pub fn vk_clear_values(&self) -> &[vk::ClearValue] {
+        &self.vk_clear_values
     }
 
     pub fn vk_render_pass(&self) -> &vk::RenderPass {

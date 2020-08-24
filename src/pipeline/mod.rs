@@ -373,6 +373,13 @@ impl<'a> GraphicsPipelineBuilder<'a> {
                 .map_err(PipelineError::PipelineLayoutCreation)?
         };
 
+        let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder()
+            .depth_test_enable(true)
+            .depth_write_enable(true)
+            .depth_compare_op(vk::CompareOp::LESS)
+            .depth_bounds_test_enable(false)
+            .stencil_test_enable(false);
+
         let g_pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
             .stages(&stages)
             .vertex_input_state(&vertex_input.create_info)
@@ -381,6 +388,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             .rasterization_state(&raster_state_info)
             .multisample_state(&msaa_info)
             .color_blend_state(&color_blend_state_info)
+            .depth_stencil_state(&depth_stencil)
             .layout(pipeline_layout)
             .render_pass(*render_pass.vk_render_pass())
             .subpass(0);

@@ -37,6 +37,7 @@ pub struct Device {
     present_queue: Queue,
     _parent_lifetime_token: LifetimeToken<Instance>,
     memory_properties: vk::PhysicalDeviceMemoryProperties,
+    depth_buffer_format: vk::Format,
 }
 
 impl AsVkDevice for Device {
@@ -56,6 +57,48 @@ impl std::ops::Drop for Device {
 
         unsafe { self.vk_device.destroy_device(None) };
     }
+}
+
+fn find_supported_format(
+    instance: &Instance,
+    vk_phys_device: &vk::PhysicalDevice,
+    candidates: &[vk::Format],
+    tiling: vk::ImageTiling,
+    features: vk::FormatFeatureFlags,
+) -> Option<vk::Format> {
+    for can in candidates {
+        let props = unsafe {
+            instance
+                .vk_instance()
+                .get_physical_device_format_properties(*vk_phys_device, *can)
+        };
+
+        if tiling == vk::ImageTiling::LINEAR && props.linear_tiling_features.contains(features) {
+            return Some(*can);
+        } else if tiling == vk::ImageTiling::OPTIMAL
+            && props.optimal_tiling_features.contains(features)
+        {
+            return Some(*can);
+        }
+    }
+
+    return None;
+}
+
+fn find_depth_format(instance: &Instance, vk_phys_device: &vk::PhysicalDevice) -> vk::Format {
+    let cands = [
+        vk::Format::D32_SFLOAT,
+        vk::Format::D32_SFLOAT_S8_UINT,
+        vk::Format::D24_UNORM_S8_UINT,
+    ];
+    find_supported_format(
+        instance,
+        vk_phys_device,
+        &cands,
+        vk::ImageTiling::OPTIMAL,
+        vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
+    )
+    .expect("Device does not support required depth formats")
 }
 
 impl Device {
@@ -89,6 +132,7 @@ impl Device {
             present_queue,
             _parent_lifetime_token: instance.lifetime_token(),
             memory_properties,
+            depth_buffer_format: find_depth_format(instance, &vk_phys_device),
         })
     }
 
@@ -132,5 +176,10 @@ impl Device {
 
     pub fn memory_properties(&self) -> &vk::PhysicalDeviceMemoryProperties {
         &self.memory_properties
+    }
+
+    // TODO: Use util::Format here
+    pub fn depth_buffer_format(&self) -> vk::Format {
+        self.depth_buffer_format
     }
 }

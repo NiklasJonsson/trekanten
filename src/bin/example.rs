@@ -14,7 +14,7 @@ use trekanten::ResourceManager;
 
 #[repr(C, packed)]
 struct Vertex {
-    pos: glm::Vec2,
+    pos: glm::Vec3,
     col: glm::Vec3,
     tex_coord: glm::Vec2,
 }
@@ -33,7 +33,7 @@ impl trekanten::vertex::VertexDefinition for Vertex {
             vk::VertexInputAttributeDescription {
                 binding: 0,
                 location: 0,
-                format: vk::Format::R32G32_SFLOAT,
+                format: vk::Format::R32G32B32_SFLOAT,
                 offset: memoffset::offset_of!(Vertex, pos) as u32,
             },
             vk::VertexInputAttributeDescription {
@@ -72,22 +72,42 @@ fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
 fn vertices() -> Vec<Vertex> {
     vec![
         Vertex {
-            pos: glm::vec2(-0.5, -0.5),
+            pos: glm::vec3(-0.5, -0.5, 0.0),
             col: glm::vec3(1.0, 0.0, 0.0),
             tex_coord: glm::vec2(0.0, 0.0),
         },
         Vertex {
-            pos: glm::vec2(0.5, -0.5),
+            pos: glm::vec3(0.5, -0.5, 0.0),
             col: glm::vec3(0.0, 1.0, 0.0),
             tex_coord: glm::vec2(1.0, 0.0),
         },
         Vertex {
-            pos: glm::vec2(0.5, 0.5),
+            pos: glm::vec3(0.5, 0.5, 0.0),
             col: glm::vec3(0.0, 0.0, 1.0),
             tex_coord: glm::vec2(1.0, 1.0),
         },
         Vertex {
-            pos: glm::vec2(-0.5, 0.5),
+            pos: glm::vec3(-0.5, 0.5, 0.0),
+            col: glm::vec3(1.0, 1.0, 1.0),
+            tex_coord: glm::vec2(0.0, 1.0),
+        },
+        Vertex {
+            pos: glm::vec3(-0.5, -0.5, -0.5),
+            col: glm::vec3(1.0, 0.0, 0.0),
+            tex_coord: glm::vec2(0.0, 0.0),
+        },
+        Vertex {
+            pos: glm::vec3(0.5, -0.5, -0.5),
+            col: glm::vec3(0.0, 1.0, 0.0),
+            tex_coord: glm::vec2(1.0, 0.0),
+        },
+        Vertex {
+            pos: glm::vec3(0.5, 0.5, -0.5),
+            col: glm::vec3(0.0, 0.0, 1.0),
+            tex_coord: glm::vec2(1.0, 1.0),
+        },
+        Vertex {
+            pos: glm::vec3(-0.5, 0.5, -0.5),
             col: glm::vec3(1.0, 1.0, 1.0),
             tex_coord: glm::vec2(0.0, 1.0),
         },
@@ -95,7 +115,7 @@ fn vertices() -> Vec<Vertex> {
 }
 
 fn indices() -> Vec<u32> {
-    vec![0, 1, 2, 2, 3, 0]
+    vec![0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4]
 }
 
 fn get_next_mvp(start: &std::time::Instant, aspect_ratio: f32) -> UniformBufferObject {
@@ -113,7 +133,7 @@ fn get_next_mvp(start: &std::time::Instant, aspect_ratio: f32) -> UniformBufferO
             &glm::vec3(0.0, 0.0, 0.0),
             &glm::vec3(0.0, 0.0, 1.0),
         ),
-        proj: glm::perspective(std::f32::consts::FRAC_PI_4, aspect_ratio, 0.1, 10.0),
+        proj: glm::perspective_zo(std::f32::consts::FRAC_PI_4, aspect_ratio, 0.1, 10.0),
     };
 
     ubo.proj[(1, 1)] *= -1.0;
