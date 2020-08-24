@@ -181,7 +181,7 @@ impl DescriptorSets {
     ) -> Result<Handle<DescriptorSet>, DescriptorSetError> {
         let mut desc_sets = self
             .descriptor_pool
-            .alloc(&descriptor.layout, self.storage.len())?;
+            .alloc(&descriptor.layout, MAX_FRAMES_IN_FLIGHT)?;
         let set0 = desc_sets.remove(0);
         let set1 = desc_sets.remove(0);
 
