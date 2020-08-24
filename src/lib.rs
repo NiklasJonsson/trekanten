@@ -143,7 +143,7 @@ impl std::ops::Drop for Renderer {
     fn drop(&mut self) {
         // If we fail here, there is not much we can do, just log it.
         if let Err(e) = self.device.wait_idle() {
-            log::error!("{}", e);
+            log::error!("Failed to drop renderer: {}", e);
         }
     }
 }
@@ -335,6 +335,7 @@ impl Renderer {
     }
 
     fn recreate_pipelines(&mut self) -> Result<(), RenderError> {
+        log::trace!("Recreating pipelines with {}", self.swapchain_extent());
         self.graphics_pipelines.recreate_all(
             &self.device,
             self.swapchain_extent(),
@@ -344,6 +345,11 @@ impl Renderer {
     }
 
     pub fn resize(&mut self, new_extent: util::Extent2D) -> Result<(), RenderError> {
+        log::trace!(
+            "Resizing from {} to {}",
+            self.swapchain_extent(),
+            new_extent
+        );
         self.device.wait_idle()?;
 
         let SwapchainAndCo {

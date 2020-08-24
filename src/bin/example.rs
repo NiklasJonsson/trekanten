@@ -98,7 +98,7 @@ fn indices() -> Vec<u32> {
     vec![0, 1, 2, 2, 3, 0]
 }
 
-fn get_next_mvp(start: &std::time::Instant) -> UniformBufferObject {
+fn get_next_mvp(start: &std::time::Instant, aspect_ratio: f32) -> UniformBufferObject {
     let time = std::time::Instant::now() - *start;
     let time = time.as_secs_f32();
 
@@ -113,12 +113,7 @@ fn get_next_mvp(start: &std::time::Instant) -> UniformBufferObject {
             &glm::vec3(0.0, 0.0, 0.0),
             &glm::vec3(0.0, 0.0, 1.0),
         ),
-        proj: glm::perspective(
-            std::f32::consts::FRAC_PI_4,
-            1.0, /* TODO: Proper aspect ratio */
-            0.1,
-            10.0,
-        ),
+        proj: glm::perspective(std::f32::consts::FRAC_PI_4, aspect_ratio, 0.1, 10.0),
     };
 
     ubo.proj[(1, 1)] *= -1.0;
@@ -192,7 +187,7 @@ fn main() -> Result<(), trekanten::RenderError> {
             x => x,
         }?;
 
-        let next_mvp = get_next_mvp(&start);
+        let next_mvp = get_next_mvp(&start, window.aspect_ratio());
         renderer
             .update_uniform(&uniform_buffer_handle, &next_mvp)
             .expect("Failed to update uniform buffer!");

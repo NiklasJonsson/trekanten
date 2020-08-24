@@ -3,6 +3,11 @@ use crate::util;
 pub trait Window {
     fn required_instance_extensions(&self) -> Vec<String>;
     fn extents(&self) -> util::Extent2D;
+    fn aspect_ratio(&self) -> f32 {
+        let util::Extent2D { width, height } = self.extents();
+
+        width as f32 / height as f32
+    }
 }
 
 pub const WINDOW_HEIGHT: u32 = 300;

@@ -22,6 +22,12 @@ impl From<Extent2D> for ash::vk::Extent2D {
     }
 }
 
+impl std::fmt::Display for Extent2D {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x{}", self.width, self.height)
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Extent3D {
     pub width: u32,
@@ -56,5 +62,11 @@ impl From<Extent3D> for ash::vk::Extent3D {
             height: e.height,
             depth: e.depth,
         }
+    }
+}
+
+impl std::fmt::Display for Extent3D {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x{}x{}", self.width, self.height, self.depth)
     }
 }

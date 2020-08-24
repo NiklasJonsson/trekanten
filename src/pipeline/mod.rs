@@ -527,9 +527,8 @@ impl GraphicsPipelines {
         viewport_extent: util::Extent2D,
         render_pass: &RenderPass,
     ) -> Result<(), PipelineError> {
-        for (mut pipe, desc) in self.mat_storage.iter_mut().zip(self.desc_storage.iter()) {
-            let mut new_pipe = Self::create_pipeline(device, viewport_extent, render_pass, &desc)?;
-            let _ = std::mem::replace(&mut pipe, &mut new_pipe);
+        for (pipe, desc) in self.mat_storage.iter_mut().zip(self.desc_storage.iter()) {
+            *pipe = Self::create_pipeline(device, viewport_extent, render_pass, &desc)?;
         }
 
         Ok(())
