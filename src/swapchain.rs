@@ -3,6 +3,7 @@ use ash::vk;
 
 use std::rc::Rc;
 
+use crate::color_buffer::ColorBuffer;
 use crate::depth_buffer::DepthBuffer;
 use crate::device::AsVkDevice;
 use crate::device::Device;
@@ -240,11 +241,12 @@ impl Swapchain {
         &self,
         render_pass: &RenderPass,
         depth_buffer: &DepthBuffer,
+        color_buffer: &ColorBuffer,
     ) -> Result<Vec<Framebuffer>, SwapchainError> {
         self.image_views
             .iter()
             .map(|iv| {
-                let views = [iv, depth_buffer.image_view()];
+                let views = [color_buffer.image_view(), depth_buffer.image_view(), iv];
                 Framebuffer::new(&self.vk_device, &views, render_pass, &self.info.extent)
             })
             .collect::<Result<Vec<_>, FramebufferError>>()

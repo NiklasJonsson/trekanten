@@ -225,7 +225,13 @@ fn main() -> Result<(), trekanten::RenderError> {
         .expect("Failed to create descriptor set");
 
     let start = std::time::Instant::now();
+    let mut last = start;
     while !window.window.should_close() {
+        let now = std::time::Instant::now();
+        let diff = now - last;
+        window.set_frame_ms(diff);
+        last = now;
+
         window.glfw.poll_events();
         for (_, event) in glfw::flush_messages(&window.events) {
             handle_window_event(&mut window.window, event);
@@ -240,7 +246,7 @@ fn main() -> Result<(), trekanten::RenderError> {
             x => x,
         }?;
 
-        let next_mvp = get_next_mvp(&start, window.aspect_ratio());
+        let next_mvp = get_next_mvp(&start, renderer.aspect_ratio());
         renderer
             .update_uniform(&uniform_buffer_handle, &next_mvp)
             .expect("Failed to update uniform buffer!");

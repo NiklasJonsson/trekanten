@@ -1,5 +1,6 @@
 use ash::vk;
 
+mod color_buffer;
 mod command;
 mod common;
 mod depth_buffer;
@@ -105,10 +106,6 @@ impl Frame {
     }
 }
 
-// TODO: Don't hardcode
-pub const WINDOW_HEIGHT: u32 = 300;
-pub const WINDOW_WIDTH: u32 = 300;
-
 pub struct Renderer {
     // Resources
     graphics_pipelines: pipeline::GraphicsPipelines,
@@ -123,6 +120,7 @@ pub struct Renderer {
     render_pass: render_pass::RenderPass,
     swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
     depth_buffer: depth_buffer::DepthBuffer,
+    color_buffer: color_buffer::ColorBuffer,
     swapchain: swapchain::Swapchain,
     swapchain_image_idx: u32, // TODO: Bake this into the swapchain?
     image_to_frame_idx: Vec<Option<u32>>,
@@ -154,6 +152,7 @@ impl std::ops::Drop for Renderer {
 struct SwapchainAndCo {
     swapchain: swapchain::Swapchain,
     depth_buffer: depth_buffer::DepthBuffer,
+    color_buffer: color_buffer::ColorBuffer,
     swapchain_framebuffers: Vec<framebuffer::Framebuffer>,
     image_to_frame_idx: Vec<Option<u32>>,
     render_pass: render_pass::RenderPass,
@@ -166,17 +165,29 @@ fn create_swapchain_and_co(
     extent: &util::Extent2D,
     old: Option<&swapchain::Swapchain>,
 ) -> Result<SwapchainAndCo, RenderError> {
+    let msaa_sample_count = device.max_msaa_sample_count();
     let swapchain = swapchain::Swapchain::new(&instance, &device, &surface, &extent, old)?;
-    let render_pass = render_pass::RenderPass::new(&device, swapchain.info().format)?;
+    let render_pass =
+        render_pass::RenderPass::new(&device, swapchain.info().format, msaa_sample_count)?;
 
     let image_to_frame_idx: Vec<Option<u32>> = (0..swapchain.num_images()).map(|_| None).collect();
-    let depth_buffer = depth_buffer::DepthBuffer::new(device, extent).expect("FAIL");
-    let swapchain_framebuffers = swapchain.create_framebuffers_for(&render_pass, &depth_buffer)?;
+    let depth_buffer =
+        depth_buffer::DepthBuffer::new(device, extent, msaa_sample_count).expect("FAIL");
+    let color_buffer = color_buffer::ColorBuffer::new(
+        device,
+        swapchain.info().format.into(),
+        extent,
+        msaa_sample_count,
+    )
+    .expect("FAIL");
+    let swapchain_framebuffers =
+        swapchain.create_framebuffers_for(&render_pass, &depth_buffer, &color_buffer)?;
 
     Ok(SwapchainAndCo {
         swapchain,
-        swapchain_framebuffers,
         depth_buffer,
+        color_buffer,
+        swapchain_framebuffers,
         image_to_frame_idx,
         render_pass,
     })
@@ -194,15 +205,12 @@ impl Renderer {
         let surface = surface::Surface::new(&instance, window)?;
         let device = device::Device::new(&instance, &surface)?;
 
-        let extent = util::Extent2D {
-            width: WINDOW_WIDTH,
-            height: WINDOW_HEIGHT,
-        };
-
+        let extent = window.extents();
         let SwapchainAndCo {
             swapchain,
             swapchain_framebuffers,
             depth_buffer,
+            color_buffer,
             image_to_frame_idx,
             render_pass,
         } = create_swapchain_and_co(&instance, &device, &surface, &extent, None)?;
@@ -225,6 +233,7 @@ impl Renderer {
             render_pass,
             swapchain_framebuffers,
             depth_buffer,
+            color_buffer,
             frame_synchronization,
             frame_idx: 0,
             frames,
@@ -363,6 +372,7 @@ impl Renderer {
             swapchain,
             swapchain_framebuffers,
             depth_buffer,
+            color_buffer,
             image_to_frame_idx,
             render_pass,
         } = create_swapchain_and_co(
@@ -376,6 +386,7 @@ impl Renderer {
         self.swapchain = swapchain;
         self.swapchain_framebuffers = swapchain_framebuffers;
         self.depth_buffer = depth_buffer;
+        self.color_buffer = color_buffer;
         self.image_to_frame_idx = image_to_frame_idx;
         self.render_pass = render_pass;
 
@@ -428,6 +439,12 @@ impl Renderer {
         handle: &Handle<descriptor::DescriptorSet>,
     ) -> Option<&descriptor::DescriptorSet> {
         self.descriptor_sets.get(handle, self.frame_idx as usize)
+    }
+
+    pub fn aspect_ratio(&self) -> f32 {
+        let util::Extent2D { width, height } = self.swapchain_extent();
+
+        width as f32 / height as f32
     }
 }
 

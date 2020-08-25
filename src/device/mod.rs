@@ -29,15 +29,21 @@ impl AsVkDevice for VkDeviceHandle {
     }
 }
 
+struct PhysicalDeviceProperties {
+    memory_properties: vk::PhysicalDeviceMemoryProperties,
+    depth_buffer_format: vk::Format,
+    _supported_msaa_sample_counts: vk::SampleCountFlags,
+    max_supported_msaa_sample_count: vk::SampleCountFlags,
+}
+
 pub struct Device {
-    vk_device: Rc<VkDevice>,
+    vk_device: VkDeviceHandle,
     vk_phys_device: vk::PhysicalDevice,
     queue_families: QueueFamilies,
     graphics_queue: Queue,
     present_queue: Queue,
     _parent_lifetime_token: LifetimeToken<Instance>,
-    memory_properties: vk::PhysicalDeviceMemoryProperties,
-    depth_buffer_format: vk::Format,
+    physical_device_properties: PhysicalDeviceProperties,
 }
 
 impl AsVkDevice for Device {
@@ -101,6 +107,25 @@ fn find_depth_format(instance: &Instance, vk_phys_device: &vk::PhysicalDevice) -
     .expect("Device does not support required depth formats")
 }
 
+fn get_max_supported_msaa(flags: vk::SampleCountFlags) -> vk::SampleCountFlags {
+    for &count in [
+        vk::SampleCountFlags::TYPE_64,
+        vk::SampleCountFlags::TYPE_32,
+        vk::SampleCountFlags::TYPE_16,
+        vk::SampleCountFlags::TYPE_8,
+        vk::SampleCountFlags::TYPE_4,
+        vk::SampleCountFlags::TYPE_2,
+    ]
+    .iter()
+    {
+        if flags.contains(count) {
+            return count;
+        }
+    }
+
+    vk::SampleCountFlags::TYPE_1
+}
+
 impl Device {
     pub fn new(instance: &Instance, surface: &Surface) -> Result<Self, DeviceError> {
         let (vk_device, vk_phys_device, queue_families) =
@@ -118,10 +143,28 @@ impl Device {
         let graphics_queue = Queue::new(Rc::clone(&vk_device), gfx);
         let present_queue = Queue::new(Rc::clone(&vk_device), present);
 
-        let memory_properties = unsafe {
-            instance
+        let physical_device_properties = unsafe {
+            let memory_properties = instance
                 .vk_instance()
-                .get_physical_device_memory_properties(vk_phys_device)
+                .get_physical_device_memory_properties(vk_phys_device);
+
+            let depth_buffer_format = find_depth_format(instance, &vk_phys_device);
+
+            let vk_props = instance
+                .vk_instance()
+                .get_physical_device_properties(vk_phys_device);
+
+            let _supported_msaa_sample_counts = vk_props.limits.framebuffer_color_sample_counts
+                & vk_props.limits.framebuffer_depth_sample_counts;
+            let max_supported_msaa_sample_count =
+                get_max_supported_msaa(_supported_msaa_sample_counts);
+
+            PhysicalDeviceProperties {
+                memory_properties,
+                depth_buffer_format,
+                _supported_msaa_sample_counts,
+                max_supported_msaa_sample_count,
+            }
         };
 
         Ok(Self {
@@ -131,8 +174,7 @@ impl Device {
             graphics_queue,
             present_queue,
             _parent_lifetime_token: instance.lifetime_token(),
-            memory_properties,
-            depth_buffer_format: find_depth_format(instance, &vk_phys_device),
+            physical_device_properties,
         })
     }
 
@@ -175,11 +217,16 @@ impl Device {
     }
 
     pub fn memory_properties(&self) -> &vk::PhysicalDeviceMemoryProperties {
-        &self.memory_properties
+        &self.physical_device_properties.memory_properties
     }
 
     // TODO: Use util::Format here
     pub fn depth_buffer_format(&self) -> vk::Format {
-        self.depth_buffer_format
+        self.physical_device_properties.depth_buffer_format
+    }
+
+    pub fn max_msaa_sample_count(&self) -> vk::SampleCountFlags {
+        self.physical_device_properties
+            .max_supported_msaa_sample_count
     }
 }

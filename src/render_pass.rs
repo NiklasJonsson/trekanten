@@ -23,6 +23,7 @@ pub struct RenderPass {
     vk_device: Rc<VkDevice>,
     vk_render_pass: vk::RenderPass,
     vk_clear_values: [vk::ClearValue; 2],
+    msaa_sample_count: vk::SampleCountFlags,
 }
 
 impl std::ops::Drop for RenderPass {
@@ -35,25 +36,44 @@ impl std::ops::Drop for RenderPass {
 }
 
 impl RenderPass {
-    pub fn new(device: &Device, format: vk::Format) -> Result<Self, RenderPassError> {
-        let color_attach = vk::AttachmentDescription::builder()
+    pub fn new(
+        device: &Device,
+        format: vk::Format,
+        msaa_sample_count: vk::SampleCountFlags,
+    ) -> Result<Self, RenderPassError> {
+        let msaa_color_attach = vk::AttachmentDescription::builder()
+            .format(format)
+            .samples(msaa_sample_count)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+        let resolve_color_attach = vk::AttachmentDescription::builder()
             .format(format)
             .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .load_op(vk::AttachmentLoadOp::DONT_CARE)
             .store_op(vk::AttachmentStoreOp::STORE)
             .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
             .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
 
-        let color_attach_ref = vk::AttachmentReference {
+        let msaa_color_attach_ref = vk::AttachmentReference {
             attachment: 0,
+            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        };
+
+        let resolve_color_attach_ref = vk::AttachmentReference {
+            attachment: 2,
             layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         };
 
         let depth_attach = vk::AttachmentDescription::builder()
             .format(device.depth_buffer_format())
-            .samples(vk::SampleCountFlags::TYPE_1)
+            .samples(msaa_sample_count)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::DONT_CARE)
             .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
@@ -66,14 +86,16 @@ impl RenderPass {
             layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         };
 
-        let color_attach_refs = &[color_attach_ref];
+        let color_attach_refs = [msaa_color_attach_ref];
+        let resolve_attach_refs = [resolve_color_attach_ref];
 
         let subpass = vk::SubpassDescription::builder()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(color_attach_refs)
+            .color_attachments(&color_attach_refs)
+            .resolve_attachments(&resolve_attach_refs)
             .depth_stencil_attachment(&depth_attach_ref);
 
-        let attachments = [*color_attach, *depth_attach];
+        let attachments = [*msaa_color_attach, *depth_attach, *resolve_color_attach];
         let subpasses = [*subpass];
 
         let subpass_dependency = vk::SubpassDependency::builder()
@@ -117,6 +139,7 @@ impl RenderPass {
             vk_device,
             vk_render_pass,
             vk_clear_values,
+            msaa_sample_count,
         })
     }
 
@@ -126,5 +149,9 @@ impl RenderPass {
 
     pub fn vk_render_pass(&self) -> &vk::RenderPass {
         &self.vk_render_pass
+    }
+
+    pub fn msaa_sample_count(&self) -> vk::SampleCountFlags {
+        self.msaa_sample_count
     }
 }

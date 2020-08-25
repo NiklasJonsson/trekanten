@@ -460,13 +460,16 @@ impl DeviceImage {
         usage: vk::ImageUsageFlags,
         memory_properties: vk::MemoryPropertyFlags,
         mip_levels: u32,
+        sample_count: vk::SampleCountFlags,
     ) -> Result<Self, MemoryError> {
-        log::trace!("Creating empty DeviceImage with:");
+        log::trace!("Creating empty 2D DeviceImage with:");
         log::trace!("\textents: {}", extents);
         log::trace!("\tformat: {:?}", format);
         log::trace!("\tusage: {:?}", usage);
         log::trace!("\tmemory properties: {:?}", memory_properties);
         log::trace!("\tmip level: {}", mip_levels);
+        log::trace!("\tsample count: {:?}", sample_count);
+        log::trace!("\timage tiling {:?}", vk::ImageTiling::OPTIMAL);
 
         let extents3d = util::Extent3D::from_2d(extents, 1);
         let info = vk::ImageCreateInfo::builder()
@@ -479,7 +482,7 @@ impl DeviceImage {
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .usage(usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .samples(vk::SampleCountFlags::TYPE_1);
+            .samples(sample_count);
 
         let vk_device = device.vk_device();
         let vk_image = unsafe {
@@ -526,6 +529,7 @@ impl DeviceImage {
             usage,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             mip_levels,
+            vk::SampleCountFlags::TYPE_1,
         )?;
 
         transition_image_layout(

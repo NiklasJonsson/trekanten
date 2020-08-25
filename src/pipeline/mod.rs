@@ -203,7 +203,7 @@ pub struct GraphicsPipelineBuilder<'a> {
     vert: Option<PipelineCreationInfo>,
     frag: Option<PipelineCreationInfo>,
     vertex_input: Option<VertexInputDescription<'a>>,
-    viewport_state: Option<vk::PipelineViewportStateCreateInfo>,
+    viewport_extent: Option<util::Extent2D>,
     render_pass: Option<&'a RenderPass>,
     refl_descriptor_set_layouts: DescriptorSetLayouts,
 }
@@ -217,8 +217,8 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             vert: None,
             frag: None,
             vertex_input: None,
-            viewport_state: None,
             render_pass: None,
+            viewport_extent: None,
             refl_descriptor_set_layouts: DescriptorSetLayouts::new(),
         }
     }
@@ -277,28 +277,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
     }
 
     pub fn viewport_extent(mut self, extent: util::Extent2D) -> Self {
-        let viewport = vk::Viewport::builder()
-            .x(0.0)
-            .y(0.0)
-            .width(extent.width as f32)
-            .height(extent.height as f32)
-            .min_depth(0.0)
-            .max_depth(1.0);
-
-        let scissor_extent: vk::Extent2D = extent.into();
-
-        let scissor = vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent: scissor_extent,
-        };
-
-        let viewports = [*viewport];
-        let scissors = [scissor];
-        let viewport_state_info = vk::PipelineViewportStateCreateInfo::builder()
-            .viewports(&viewports)
-            .scissors(&scissors);
-
-        self.viewport_state = Some(viewport_state_info.build());
+        self.viewport_extent = Some(extent);
         self
     }
 
@@ -315,8 +294,8 @@ impl<'a> GraphicsPipelineBuilder<'a> {
         let vertex_input = self
             .vertex_input
             .ok_or(PipelineBuilderError::MissingVertexDescription)?;
-        let viewport_state = self
-            .viewport_state
+        let viewport_extent = self
+            .viewport_extent
             .ok_or(PipelineBuilderError::MissingViewportState)?;
         let render_pass = self
             .render_pass
@@ -340,7 +319,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
 
         let msaa_info = vk::PipelineMultisampleStateCreateInfo::builder()
             .sample_shading_enable(false)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+            .rasterization_samples(render_pass.msaa_sample_count());
 
         let color_blend_attach_info = vk::PipelineColorBlendAttachmentState::builder()
             .color_write_mask(vk::ColorComponentFlags::all())
@@ -380,11 +359,32 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             .depth_bounds_test_enable(false)
             .stencil_test_enable(false);
 
+        let viewport = vk::Viewport::builder()
+            .x(0.0)
+            .y(0.0)
+            .width(viewport_extent.width as f32)
+            .height(viewport_extent.height as f32)
+            .min_depth(0.0)
+            .max_depth(1.0);
+
+        let scissor_extent: vk::Extent2D = viewport_extent.into();
+
+        let scissor = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: scissor_extent,
+        };
+
+        let viewports = [*viewport];
+        let scissors = [scissor];
+        let viewport_state_info = vk::PipelineViewportStateCreateInfo::builder()
+            .viewports(&viewports)
+            .scissors(&scissors);
+
         let g_pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
             .stages(&stages)
             .vertex_input_state(&vertex_input.create_info)
             .input_assembly_state(&input_assembly_info)
-            .viewport_state(&viewport_state)
+            .viewport_state(&viewport_state_info)
             .rasterization_state(&raster_state_info)
             .multisample_state(&msaa_info)
             .color_blend_state(&color_blend_state_info)

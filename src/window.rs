@@ -1,13 +1,9 @@
 use crate::util;
+use std::time::Duration;
 
 pub trait Window {
     fn required_instance_extensions(&self) -> Vec<String>;
     fn extents(&self) -> util::Extent2D;
-    fn aspect_ratio(&self) -> f32 {
-        let util::Extent2D { width, height } = self.extents();
-
-        width as f32 / height as f32
-    }
 }
 
 pub const WINDOW_HEIGHT: u32 = 300;
@@ -20,6 +16,8 @@ pub struct GlfwWindow {
     pub glfw: glfw::Glfw,
     pub window: glfw::Window,
     pub events: GlfwWindowEvents,
+    frame_times: [std::time::Duration; 10],
+    frame_time_idx: usize,
 }
 
 impl GlfwWindow {
@@ -44,6 +42,29 @@ impl GlfwWindow {
             glfw,
             window,
             events,
+            frame_times: [std::time::Duration::default(); 10],
+            frame_time_idx: 0,
+        }
+    }
+
+    pub fn set_frame_ms(&mut self, time: Duration) {
+        self.frame_times[self.frame_time_idx] = time;
+
+        if self.frame_time_idx == self.frame_times.len() - 1 {
+            let avg = self
+                .frame_times
+                .iter()
+                .fold(Duration::from_secs(0), |acc, &t| acc + t)
+                / self.frame_times.len() as u32;
+            let s = format!(
+                "Trekanten (FPS: {:.2}, {:.2} ms)",
+                1.0 / avg.as_secs_f32(),
+                1000.0 * avg.as_secs_f32()
+            );
+            self.window.set_title(&s);
+            self.frame_time_idx = 0;
+        } else {
+            self.frame_time_idx += 1;
         }
     }
 }
