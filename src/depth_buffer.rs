@@ -29,13 +29,15 @@ impl DepthBuffer {
         let format = device.depth_buffer_format().into();
         let usage = vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
         let props = vk::MemoryPropertyFlags::DEVICE_LOCAL;
-        let image = DeviceImage::empty_2d(device, *extents, format, usage, props)
+        let mip_levels = 1; // No mip maps
+        let image = DeviceImage::empty_2d(device, *extents, format, usage, props, mip_levels)
             .map_err(DepthBufferError::Memory)?;
         let image_view = ImageView::new(
             device,
             image.vk_image(),
             format,
             vk::ImageAspectFlags::DEPTH,
+            mip_levels,
         )
         .map_err(DepthBufferError::ImageView)?;
         Ok(Self {

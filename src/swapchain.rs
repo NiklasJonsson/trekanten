@@ -205,10 +205,19 @@ impl Swapchain {
         };
 
         let util_format = util::Format::from(image_format);
+        let mip_levels = 1;
 
         let image_views = images
             .iter()
-            .map(|img| ImageView::new(device, img, util_format, vk::ImageAspectFlags::COLOR))
+            .map(|img| {
+                ImageView::new(
+                    device,
+                    img,
+                    util_format,
+                    vk::ImageAspectFlags::COLOR,
+                    mip_levels,
+                )
+            })
             .collect::<Result<Vec<_>, ImageViewError>>()
             .map_err(SwapchainError::ImageViewCreation)?;
 

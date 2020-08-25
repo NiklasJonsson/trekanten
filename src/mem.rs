@@ -1,6 +1,7 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use crate::command::CommandBuffer;
 use crate::command::CommandBufferError;
 use crate::command::CommandPool;
 use crate::command::CommandPoolError;
@@ -243,6 +244,7 @@ fn transition_image_layout(
     queue: &Queue,
     command_pool: &CommandPool,
     vk_image: &vk::Image,
+    mip_levels: u32,
     _vk_format: vk::Format,
     old_layout: vk::ImageLayout,
     new_layout: vk::ImageLayout,
@@ -251,7 +253,6 @@ fn transition_image_layout(
     // directly after submitting. If the code is used elsewhere, it makes the following
     // assumptions:
     // * The image is only read in the fragment shader
-    // * The image has no mip map levels
     // * The image is not an image array
     // * The image is only used in one queue
 
@@ -280,7 +281,7 @@ fn transition_image_layout(
         subresource_range: vk::ImageSubresourceRange {
             aspect_mask: vk::ImageAspectFlags::COLOR,
             base_mip_level: 0,
-            level_count: 1,
+            level_count: mip_levels,
             base_array_layer: 0,
             layer_count: 1,
         },
@@ -321,6 +322,130 @@ fn copy_buffer_to_image(
         .map_err(MemoryError::CopySubmit)
 }
 
+// TODO: This code depends on vk_image being TRANSfER_DST_OPTIMAL. We should track this together
+// with the image.
+fn generate_mipmaps(
+    mut cmd_buf: CommandBuffer,
+    vk_image: &vk::Image,
+    extent: &util::Extent2D,
+    mip_levels: u32,
+) -> CommandBuffer {
+    assert!(cmd_buf.is_started());
+    let aspect_mask = vk::ImageAspectFlags::COLOR;
+
+    let mut barrier = vk::ImageMemoryBarrier {
+        image: *vk_image,
+        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        subresource_range: vk::ImageSubresourceRange {
+            aspect_mask,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut mip_width = extent.width;
+    let mut mip_height = extent.height;
+
+    for i in 1..mip_levels {
+        barrier.subresource_range.base_mip_level = i - 1;
+        barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
+        barrier.new_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
+        barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+        barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
+
+        let src_offsets = [
+            vk::Offset3D { x: 0, y: 0, z: 0 },
+            vk::Offset3D {
+                x: mip_width as i32,
+                y: mip_height as i32,
+                z: 1,
+            },
+        ];
+
+        let dst_x = if mip_width > 1 { mip_width / 2 } else { 1 } as i32;
+        let dst_y = if mip_height > 1 { mip_height / 2 } else { 1 } as i32;
+        let dst_offsets = [
+            vk::Offset3D { x: 0, y: 0, z: 0 },
+            vk::Offset3D {
+                x: dst_x,
+                y: dst_y,
+                z: 1,
+            },
+        ];
+
+        let image_blit = vk::ImageBlit {
+            src_offsets,
+            src_subresource: vk::ImageSubresourceLayers {
+                aspect_mask,
+                mip_level: i - 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+            dst_offsets,
+            dst_subresource: vk::ImageSubresourceLayers {
+                aspect_mask,
+                mip_level: i,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+        };
+
+        let transistion_src_barrier = vk::ImageMemoryBarrier {
+            old_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            src_access_mask: vk::AccessFlags::TRANSFER_READ,
+            dst_access_mask: vk::AccessFlags::SHADER_READ,
+            ..barrier
+        };
+
+        cmd_buf = cmd_buf
+            .pipeline_barrier(
+                &barrier,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::TRANSFER,
+            )
+            .blit_image(vk_image, vk_image, &image_blit)
+            .pipeline_barrier(
+                &transistion_src_barrier,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+            );
+
+        mip_width = if mip_width > 1 {
+            mip_width / 2
+        } else {
+            mip_width
+        };
+        mip_height = if mip_height > 1 {
+            mip_height / 2
+        } else {
+            mip_height
+        };
+    }
+
+    let last_mip_level_transition = vk::ImageMemoryBarrier {
+        subresource_range: vk::ImageSubresourceRange {
+            base_mip_level: mip_levels - 1,
+            ..barrier.subresource_range
+        },
+        old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+        dst_access_mask: vk::AccessFlags::SHADER_READ,
+        ..barrier
+    };
+
+    cmd_buf.pipeline_barrier(
+        &last_mip_level_transition,
+        vk::PipelineStageFlags::TRANSFER,
+        vk::PipelineStageFlags::FRAGMENT_SHADER,
+    )
+}
+
 pub struct DeviceImage {
     vk_device: VkDeviceHandle,
     vk_image: vk::Image,
@@ -334,17 +459,20 @@ impl DeviceImage {
         format: util::Format,
         usage: vk::ImageUsageFlags,
         memory_properties: vk::MemoryPropertyFlags,
+        mip_levels: u32,
     ) -> Result<Self, MemoryError> {
         log::trace!("Creating empty DeviceImage with:");
         log::trace!("\textents: {}", extents);
         log::trace!("\tformat: {:?}", format);
+        log::trace!("\tusage: {:?}", usage);
         log::trace!("\tmemory properties: {:?}", memory_properties);
+        log::trace!("\tmip level: {}", mip_levels);
 
         let extents3d = util::Extent3D::from_2d(extents, 1);
         let info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(extents3d.into())
-            .mip_levels(1)
+            .mip_levels(mip_levels)
             .array_layers(1)
             .format(format.into())
             .tiling(vk::ImageTiling::OPTIMAL)
@@ -377,27 +505,34 @@ impl DeviceImage {
         })
     }
 
-    pub fn device_local_by_staging(
+    /// Create a device local image, generating mipmaps in the process
+    pub fn device_local_mipmapped(
         device: &Device,
         queue: &Queue,
         command_pool: &CommandPool,
         extents: util::Extent2D,
         format: util::Format,
+        mip_levels: u32,
         data: &[u8],
     ) -> Result<Self, MemoryError> {
         let staging = DeviceBuffer::staging_with_data(device, data)?;
+        let usage = vk::ImageUsageFlags::TRANSFER_SRC
+            | vk::ImageUsageFlags::TRANSFER_DST
+            | vk::ImageUsageFlags::SAMPLED;
         let dst_image = Self::empty_2d(
             device,
             extents,
             format,
-            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            usage,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            mip_levels,
         )?;
 
         transition_image_layout(
             queue,
             command_pool,
             &dst_image.vk_image,
+            mip_levels,
             format.into(),
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -412,14 +547,19 @@ impl DeviceImage {
             extents.height,
         )?;
 
-        transition_image_layout(
-            queue,
-            command_pool,
-            &dst_image.vk_image,
-            format.into(),
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        )?;
+        // Transitioned to SHADER_READ_ONLY_OPTIMAL during mipmap generation
+        // TODO: Reuse this command buffer above
+        let mut cmd_buf = command_pool
+            .begin_single_submit()
+            .map_err(MemoryError::CopyCommandPool)?;
+
+        cmd_buf = generate_mipmaps(cmd_buf, dst_image.vk_image(), &extents, mip_levels)
+            .end()
+            .map_err(MemoryError::CopyCommandBuffer)?;
+
+        queue
+            .submit_and_wait(&cmd_buf)
+            .map_err(MemoryError::CopySubmit)?;
 
         Ok(dst_image)
     }

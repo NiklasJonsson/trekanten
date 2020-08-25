@@ -158,6 +158,7 @@ pub enum DeviceSuitability {
     MissingPresentQueue,
     UnsuitableSwapchainFormat,
     UnsuitableSwapchainPresentMode,
+    MissingMipmapGenerationSupport,
 }
 
 impl DeviceSuitability {
@@ -196,6 +197,20 @@ fn device_supports_features(
     supported.sampler_anisotropy == vk::TRUE
 }
 
+fn device_supports_mipmap_generation(
+    instance: &Instance,
+    vk_phys_device: &vk::PhysicalDevice,
+) -> bool {
+    super::find_supported_format(
+        instance,
+        vk_phys_device,
+        &[vk::Format::R8G8B8A8_SRGB],
+        vk::ImageTiling::OPTIMAL,
+        vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR,
+    )
+    .is_some()
+}
+
 fn check_device_suitability(
     instance: &Instance,
     device: &vk::PhysicalDevice,
@@ -207,6 +222,10 @@ fn check_device_suitability(
 
     if !device_supports_features(instance, device, &required_device_features()) {
         return Ok(DeviceSuitability::MissingRequiredFeatures);
+    }
+
+    if !device_supports_mipmap_generation(instance, device) {
+        return Ok(DeviceSuitability::MissingMipmapGenerationSupport);
     }
 
     let fams = find_queue_families(instance, device, surface)?;

@@ -108,10 +108,10 @@ const TEX_URL: &str = "https://vulkan-tutorial.com/resources/viking_room.png";
 fn load_viking_house() -> (Vec<Vertex>, Vec<u32>) {
     let mut cursor = load_url("models", OBJ_URL);
 
-     let (mut models, _) = tobj::load_obj_buf(&mut cursor, true, |_| {
+    let (mut models, _) = tobj::load_obj_buf(&mut cursor, true, |_| {
         Ok((vec![], std::collections::HashMap::new()))
     })
-    .unwrap();       
+    .unwrap();
 
     println!("# of models: {}", models.len());
     let model = models.remove(0);
@@ -119,12 +119,13 @@ fn load_viking_house() -> (Vec<Vertex>, Vec<u32>) {
     let mut vertices = Vec::new();
 
     let tobj::Model {
-        mesh: tobj::Mesh {
-            positions,
-            texcoords,
-            indices,
-            ..
-        },
+        mesh:
+            tobj::Mesh {
+                positions,
+                texcoords,
+                indices,
+                ..
+            },
         ..
     } = model;
 
@@ -212,9 +213,7 @@ fn main() -> Result<(), trekanten::RenderError> {
     let _ = load_url("textures", TEX_URL);
     let tex_path = get_fname("textures", TEX_URL);
     let texture_handle = renderer
-        .create_resource(texture::TextureDescriptor::new(
-            tex_path.into(),
-        ))
+        .create_resource(texture::TextureDescriptor::new(tex_path.into()))
         .expect("Failed to create texture");
 
     let desc_set_handle = renderer

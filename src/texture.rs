@@ -74,9 +74,10 @@ impl Sampler {
             .compare_enable(false)
             .compare_op(vk::CompareOp::ALWAYS)
             .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-            .mip_lod_bias(1.0)
+            .mip_lod_bias(0.0)
             .min_lod(0.0)
-            .max_lod(0.0);
+            // From ARM Mali recommendations. 1000 is large enough for any texture
+            .max_lod(1000.0);
 
         let vk_device = device.vk_device();
         let vk_sampler = unsafe {
@@ -123,23 +124,32 @@ impl Texture {
             height: image.height(),
         };
 
+        let mip_levels = (extents.max_dim() as f32).log2().floor() as u32 + 1;
+
         let format: util::Format = vk::Format::R8G8B8A8_SRGB.into();
 
         let raw_image_data = image.into_raw();
-        let device_image = DeviceImage::device_local_by_staging(
+        let device_image = DeviceImage::device_local_mipmapped(
             device,
             queue,
             command_pool,
             extents,
             format,
+            mip_levels,
             &raw_image_data,
         )
         .map_err(TextureError::Memory)?;
 
         let aspect = vk::ImageAspectFlags::COLOR;
 
-        let image_view = ImageView::new(device, device_image.vk_image(), format.into(), aspect)
-            .expect("Failed to create image view");
+        let image_view = ImageView::new(
+            device,
+            device_image.vk_image(),
+            format.into(),
+            aspect,
+            mip_levels,
+        )
+        .expect("Failed to create image view");
 
         let sampler = Sampler::new(device)?;
 

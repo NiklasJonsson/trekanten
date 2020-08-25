@@ -4,6 +4,12 @@ pub struct Extent2D {
     pub height: u32,
 }
 
+impl Extent2D {
+    pub fn max_dim(&self) -> u32 {
+        std::cmp::max(self.width, self.height)
+    }
+}
+
 impl From<ash::vk::Extent2D> for Extent2D {
     fn from(e: ash::vk::Extent2D) -> Self {
         Self {
@@ -42,6 +48,10 @@ impl Extent3D {
             height: extent.height,
             depth,
         }
+    }
+
+    pub fn max_dim(&self) -> u32 {
+        std::cmp::max(std::cmp::max(self.width, self.height), self.depth)
     }
 }
 

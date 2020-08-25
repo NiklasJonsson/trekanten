@@ -148,6 +148,7 @@ pub struct CommandBuffer {
     queue_flags: vk::QueueFlags,
     vk_cmd_buffer: vk::CommandBuffer,
     vk_device: VkDeviceHandle,
+    is_started: bool,
 }
 
 impl CommandBuffer {
@@ -160,6 +161,7 @@ impl CommandBuffer {
             vk_cmd_buffer,
             vk_device,
             queue_flags,
+            is_started: false,
         }
     }
 
@@ -167,8 +169,12 @@ impl CommandBuffer {
         &self.vk_cmd_buffer
     }
 
+    pub fn is_started(&self) -> bool {
+        self.is_started
+    }
+
     pub fn begin(
-        self,
+        mut self,
         submission_type: CommandBufferSubmission,
     ) -> Result<Self, CommandBufferError> {
         let flags = match submission_type {
@@ -187,6 +193,7 @@ impl CommandBuffer {
                 .map_err(CommandBufferError::Begin)?;
         };
 
+        self.is_started = true;
         Ok(self)
     }
 
@@ -405,6 +412,27 @@ impl CommandBuffer {
                 &[],
                 &[],
                 &[*barrier],
+            );
+        }
+
+        self
+    }
+
+    pub fn blit_image(
+        self,
+        src: &vk::Image,
+        dst: &vk::Image,
+        vk_image_blit: &vk::ImageBlit,
+    ) -> Self {
+        unsafe {
+            self.vk_device.cmd_blit_image(
+                self.vk_cmd_buffer,
+                *src,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                *dst,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[*vk_image_blit],
+                vk::Filter::LINEAR,
             );
         }
 
