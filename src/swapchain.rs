@@ -165,7 +165,7 @@ impl Swapchain {
                 .queue_family_indices(&[]); // optional
         }
 
-        let old_handle = old.map(|v| v.handle).unwrap_or(vk::SwapchainKHR::null());
+        let old_handle = old.map(|v| v.handle).unwrap_or_else(vk::SwapchainKHR::null);
 
         let info = builder
             .pre_transform(query.capabilites.current_transform)

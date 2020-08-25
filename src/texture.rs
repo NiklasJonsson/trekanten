@@ -142,14 +142,9 @@ impl Texture {
 
         let aspect = vk::ImageAspectFlags::COLOR;
 
-        let image_view = ImageView::new(
-            device,
-            device_image.vk_image(),
-            format.into(),
-            aspect,
-            mip_levels,
-        )
-        .expect("Failed to create image view");
+        let image_view =
+            ImageView::new(device, device_image.vk_image(), format, aspect, mip_levels)
+                .expect("Failed to create image view");
 
         let sampler = Sampler::new(device)?;
 

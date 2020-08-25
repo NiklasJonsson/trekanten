@@ -73,16 +73,16 @@ fn find_supported_format(
                 .get_physical_device_format_properties(*vk_phys_device, *can)
         };
 
-        if tiling == vk::ImageTiling::LINEAR && props.linear_tiling_features.contains(features) {
-            return Some(*can);
-        } else if tiling == vk::ImageTiling::OPTIMAL
-            && props.optimal_tiling_features.contains(features)
-        {
+        let linear_match =
+            tiling == vk::ImageTiling::LINEAR && props.linear_tiling_features.contains(features);
+        let optimal_match =
+            tiling == vk::ImageTiling::OPTIMAL && props.optimal_tiling_features.contains(features);
+        if linear_match || optimal_match {
             return Some(*can);
         }
     }
 
-    return None;
+    None
 }
 
 fn find_depth_format(instance: &Instance, vk_phys_device: &vk::PhysicalDevice) -> vk::Format {
