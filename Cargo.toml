@@ -26,3 +26,5 @@ image = "0.23.8"
 
 [dev-dependencies]
 inline-spirv = "0.1.1"
+reqwest = {version = "0.10.7", features = ["blocking"]}
+tobj = "2.0.2"

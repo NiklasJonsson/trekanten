@@ -59,6 +59,87 @@ struct UniformBufferObject {
     proj: glm::Mat4,
 }
 
+fn get_fname(dir: &str, target: &str) -> std::path::PathBuf {
+    let url = reqwest::Url::parse(target).expect("Bad url");
+
+    let fname = url
+        .path_segments()
+        .and_then(|segments| segments.last())
+        .and_then(|name| if name.is_empty() { None } else { Some(name) })
+        .unwrap_or("tmp.bin");
+
+    std::env::current_dir().unwrap().join(dir).join(fname)
+}
+
+fn create_file(dir: &str, target: &str) -> std::fs::File {
+    std::fs::create_dir_all(dir).expect("Failed to create_dir_all");
+    let fname = get_fname(dir, target);
+
+    println!("will be located under: '{:?}'", fname);
+    std::fs::File::create(fname).expect("Failed to create file")
+}
+
+fn load_file(fname: &std::path::Path) -> std::io::Cursor<Vec<u8>> {
+    use std::io::Read;
+    let mut buf = Vec::new();
+    let mut file = std::fs::File::open(&fname).unwrap();
+    file.read_to_end(&mut buf).unwrap();
+    std::io::Cursor::new(buf)
+}
+
+fn load_url(dir: &str, target: &str) -> std::io::Cursor<Vec<u8>> {
+    let fname = get_fname(dir, target);
+
+    if fname.exists() {
+        println!("File already exists: '{}'. Reusing!", fname.display());
+    } else {
+        let mut file = create_file(dir, target);
+        println!("File to download: '{}'", fname.display());
+        let body = reqwest::blocking::get(target).unwrap().text().unwrap();
+        std::io::copy(&mut body.as_bytes(), &mut file).expect("failed to copy");
+    }
+
+    load_file(&fname)
+}
+
+const OBJ_URL: &str = "https://vulkan-tutorial.com/resources/viking_room.obj";
+const TEX_URL: &str = "https://vulkan-tutorial.com/resources/viking_room.png";
+
+fn load_viking_house() -> (Vec<Vertex>, Vec<u32>) {
+    let mut cursor = load_url("models", OBJ_URL);
+
+     let (mut models, _) = tobj::load_obj_buf(&mut cursor, true, |_| {
+        Ok((vec![], std::collections::HashMap::new()))
+    })
+    .unwrap();       
+
+    println!("# of models: {}", models.len());
+    let model = models.remove(0);
+
+    let mut vertices = Vec::new();
+
+    let tobj::Model {
+        mesh: tobj::Mesh {
+            positions,
+            texcoords,
+            indices,
+            ..
+        },
+        ..
+    } = model;
+
+    for (pos, tc) in positions.chunks(3).zip(texcoords.chunks(2)) {
+        let vertex = Vertex {
+            pos: glm::vec3(pos[0], pos[1], pos[2]),
+            col: glm::vec3(1.0, 1.0, 1.0),
+            tex_coord: glm::vec2(tc[0], 1.0 - tc[1]),
+        };
+        vertices.push(vertex);
+    }
+
+    (vertices, indices)
+}
+
 // TODO:
 // * Handle window requested resize
 // * Wait while minimized
@@ -67,55 +148,6 @@ fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
         glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => window.set_should_close(true),
         _ => {}
     }
-}
-
-fn vertices() -> Vec<Vertex> {
-    vec![
-        Vertex {
-            pos: glm::vec3(-0.5, -0.5, 0.0),
-            col: glm::vec3(1.0, 0.0, 0.0),
-            tex_coord: glm::vec2(0.0, 0.0),
-        },
-        Vertex {
-            pos: glm::vec3(0.5, -0.5, 0.0),
-            col: glm::vec3(0.0, 1.0, 0.0),
-            tex_coord: glm::vec2(1.0, 0.0),
-        },
-        Vertex {
-            pos: glm::vec3(0.5, 0.5, 0.0),
-            col: glm::vec3(0.0, 0.0, 1.0),
-            tex_coord: glm::vec2(1.0, 1.0),
-        },
-        Vertex {
-            pos: glm::vec3(-0.5, 0.5, 0.0),
-            col: glm::vec3(1.0, 1.0, 1.0),
-            tex_coord: glm::vec2(0.0, 1.0),
-        },
-        Vertex {
-            pos: glm::vec3(-0.5, -0.5, -0.5),
-            col: glm::vec3(1.0, 0.0, 0.0),
-            tex_coord: glm::vec2(0.0, 0.0),
-        },
-        Vertex {
-            pos: glm::vec3(0.5, -0.5, -0.5),
-            col: glm::vec3(0.0, 1.0, 0.0),
-            tex_coord: glm::vec2(1.0, 0.0),
-        },
-        Vertex {
-            pos: glm::vec3(0.5, 0.5, -0.5),
-            col: glm::vec3(0.0, 0.0, 1.0),
-            tex_coord: glm::vec2(1.0, 1.0),
-        },
-        Vertex {
-            pos: glm::vec3(-0.5, 0.5, -0.5),
-            col: glm::vec3(1.0, 1.0, 1.0),
-            tex_coord: glm::vec2(0.0, 1.0),
-        },
-    ]
-}
-
-fn indices() -> Vec<u32> {
-    vec![0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4]
 }
 
 fn get_next_mvp(start: &std::time::Instant, aspect_ratio: f32) -> UniformBufferObject {
@@ -133,7 +165,7 @@ fn get_next_mvp(start: &std::time::Instant, aspect_ratio: f32) -> UniformBufferO
             &glm::vec3(0.0, 0.0, 0.0),
             &glm::vec3(0.0, 0.0, 1.0),
         ),
-        proj: glm::perspective_zo(std::f32::consts::FRAC_PI_4, aspect_ratio, 0.1, 10.0),
+        proj: glm::perspective_zo(aspect_ratio, std::f32::consts::FRAC_PI_4, 0.1, 10.0),
     };
 
     ubo.proj[(1, 1)] *= -1.0;
@@ -144,8 +176,7 @@ fn get_next_mvp(start: &std::time::Instant, aspect_ratio: f32) -> UniformBufferO
 fn main() -> Result<(), trekanten::RenderError> {
     env_logger::init();
 
-    let vertices = vertices();
-    let indices = indices();
+    let (vertices, indices) = load_viking_house();
 
     let mut window = trekanten::window::GlfwWindow::new();
     let mut renderer = trekanten::Renderer::new(&window)?;
@@ -178,9 +209,11 @@ fn main() -> Result<(), trekanten::RenderError> {
         .create_resource(uniform_buffer_desc)
         .expect("Failed to create uniform buffer");
 
+    let _ = load_url("textures", TEX_URL);
+    let tex_path = get_fname("textures", TEX_URL);
     let texture_handle = renderer
         .create_resource(texture::TextureDescriptor::new(
-            "textures/statue-1275469_640.jpg".into(),
+            tex_path.into(),
         ))
         .expect("Failed to create texture");
 
