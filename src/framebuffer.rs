@@ -1,7 +1,7 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
-use std::rc::Rc;
+use crate::device::VkDeviceHandle;
 
 use crate::device::HasVkDevice;
 use crate::device::VkDevice;
@@ -22,7 +22,7 @@ impl std::fmt::Display for FramebufferError {
 }
 
 pub struct Framebuffer {
-    vk_device: Rc<VkDevice>,
+    vk_device: VkDeviceHandle,
     vk_framebuffer: vk::Framebuffer,
 }
 

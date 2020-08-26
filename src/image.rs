@@ -1,7 +1,7 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
-use std::rc::Rc;
+use crate::device::VkDeviceHandle;
 
 use crate::device::HasVkDevice;
 use crate::device::VkDevice;
@@ -21,7 +21,7 @@ impl std::fmt::Display for ImageViewError {
 
 pub struct ImageView {
     vk_image_view: vk::ImageView,
-    vk_device: Rc<VkDevice>,
+    vk_device: VkDeviceHandle,
 }
 
 impl std::ops::Drop for ImageView {

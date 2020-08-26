@@ -1,7 +1,7 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
-use std::rc::Rc;
+use crate::device::VkDeviceHandle;
 
 use crate::device::Device;
 use crate::device::HasVkDevice;
@@ -20,7 +20,7 @@ impl std::fmt::Display for RenderPassError {
 }
 
 pub struct RenderPass {
-    vk_device: Rc<VkDevice>,
+    vk_device: VkDeviceHandle,
     vk_render_pass: vk::RenderPass,
     vk_clear_values: [vk::ClearValue; 2],
     msaa_sample_count: vk::SampleCountFlags,

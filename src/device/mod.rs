@@ -19,7 +19,7 @@ mod error;
 pub use error::DeviceError;
 
 pub type VkDevice = ash::Device;
-pub type VkDeviceHandle = Rc<ash::Device>;
+pub type VkDeviceHandle = Rc<VkDevice>;
 pub type AllocatorHandle = Rc<Allocator>;
 
 pub trait HasVkDevice {

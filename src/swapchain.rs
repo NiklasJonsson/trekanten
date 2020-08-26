@@ -1,7 +1,7 @@
 use ash::extensions::khr::Swapchain as SwapchainLoader;
 use ash::vk;
 
-use std::rc::Rc;
+use crate::device::VkDeviceHandle;
 
 use crate::color_buffer::ColorBuffer;
 use crate::depth_buffer::DepthBuffer;
@@ -66,7 +66,7 @@ pub struct Swapchain {
     images: Vec<vk::Image>,
     image_views: Vec<ImageView>,
     info: SwapchainInfo,
-    vk_device: Rc<VkDevice>,
+    vk_device: VkDeviceHandle,
 }
 
 impl std::ops::Drop for Swapchain {

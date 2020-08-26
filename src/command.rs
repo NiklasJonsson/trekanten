@@ -1,8 +1,6 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
-use std::rc::Rc;
-
 use crate::descriptor::DescriptorSet;
 use crate::device::Device;
 use crate::device::HasVkDevice;
@@ -112,7 +110,7 @@ impl CommandPool {
             .into_iter()
             .map(|vk_cmd_buf| {
                 CommandBuffer::new(
-                    Rc::clone(&self.vk_device),
+                    VkDeviceHandle::clone(&self.vk_device),
                     vk_cmd_buf,
                     self.queue_family.props.queue_flags,
                     submission_type,

@@ -1,7 +1,7 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
-use std::rc::Rc;
+use crate::device::VkDeviceHandle;
 
 use crate::command::CommandBuffer;
 use crate::device::{HasVkDevice, VkDevice};
@@ -41,7 +41,7 @@ pub struct QueueFamilies {
 
 #[derive(Clone)]
 pub struct Queue {
-    vk_device: Rc<VkDevice>,
+    vk_device: VkDeviceHandle,
     vk_queue: vk::Queue,
 }
 
