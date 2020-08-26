@@ -1,45 +1,24 @@
 use ash::vk;
 
-use std::ffi::CString;
+use thiserror::Error;
 
-#[derive(Debug, Clone)]
-pub enum InstanceCreationError {
+#[derive(Debug, Error)]
+pub enum InstanceError {
+    #[error("Instance creation failed: {0}")]
     Creation(vk::Result),
-    ExtensionEnumeration(vk::Result),
-    MissingExtension(CString),
+    #[error("Missing a vulkan extension: {0}")]
+    MissingExtension(String),
+    #[error("Failed to load instance: {0:?}")]
     LoadError(Vec<&'static str>),
+    #[error("Internal vulkan error: {0} {1}")]
+    InternalVulkan(vk::Result, &'static str),
 }
 
-impl std::error::Error for InstanceCreationError {}
-impl std::fmt::Display for InstanceCreationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<ash::InstanceError> for InstanceCreationError {
+impl From<ash::InstanceError> for InstanceError {
     fn from(e: ash::InstanceError) -> Self {
         match e {
-            ash::InstanceError::VkError(r) => InstanceCreationError::Creation(r),
-            ash::InstanceError::LoadError(v) => InstanceCreationError::LoadError(v),
+            ash::InstanceError::VkError(r) => InstanceError::Creation(r),
+            ash::InstanceError::LoadError(v) => InstanceError::LoadError(v),
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum InstanceError {
-    Creation(InstanceCreationError),
-}
-
-impl std::error::Error for InstanceError {}
-impl std::fmt::Display for InstanceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<InstanceCreationError> for InstanceError {
-    fn from(e: InstanceCreationError) -> Self {
-        Self::Creation(e)
     }
 }

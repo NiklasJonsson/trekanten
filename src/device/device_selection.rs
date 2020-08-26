@@ -128,7 +128,7 @@ fn device_supports_extensions<T: AsRef<CStr>>(
         instance
             .vk_instance()
             .enumerate_device_extension_properties(*device)
-            .map_err(DeviceCreationError::ExtensionEnumeration)?
+            .map_err(|e| DeviceCreationError::InternalVulkan(e, "Device exentension query"))?
     };
 
     for r in required_extensions.iter() {
@@ -329,7 +329,7 @@ pub fn device_selection(
         instance
             .vk_instance()
             .enumerate_physical_devices()
-            .map_err(DeviceCreationError::PhysicalDeviceEnumeration)?
+            .map_err(|e| DeviceCreationError::InternalVulkan(e, "Physical device enumeration"))?
     };
 
     if physical_devices.is_empty() {

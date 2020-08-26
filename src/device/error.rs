@@ -1,54 +1,29 @@
 use ash::vk;
 
+use thiserror::Error;
+
 use super::device_selection::DeviceSuitability;
 use crate::surface::SurfaceError;
-use crate::swapchain::SwapchainError;
 
-#[derive(Debug, Clone)]
+
+#[derive(Error, Debug)]
 pub enum DeviceCreationError {
+    #[error("creation failed: {0}")]
     Creation(vk::Result),
+    #[error("Not suitable: {0}")]
     UnsuitableDevice(DeviceSuitability),
+    #[error("Missing physical device, is vulkan supported?")]
     MissingPhysicalDevice,
-    ExtensionEnumeration(vk::Result),
-    PhysicalDeviceEnumeration(vk::Result),
-    Surface(SurfaceError),
+    #[error("Internal vulkan error: {0} {1}")]
+    InternalVulkan(vk::Result, &'static str),
+    #[error("Surface issue {0}")]
+    Surface(#[from] SurfaceError),
 }
 
-impl std::error::Error for DeviceCreationError {}
-impl std::fmt::Display for DeviceCreationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<SurfaceError> for DeviceCreationError {
-    fn from(e: SurfaceError) -> Self {
-        Self::Surface(e)
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Error, Debug)]
 pub enum DeviceError {
-    Creation(DeviceCreationError),
-    Swapchain(SwapchainError),
+    #[error("Device creation failed: {0}")]
+    Creation(#[from] DeviceCreationError),
+    #[error("vkWaitIdle() failed: {0}")]
     WaitIdle(vk::Result),
-}
-
-impl std::error::Error for DeviceError {}
-impl std::fmt::Display for DeviceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<SwapchainError> for DeviceError {
-    fn from(e: SwapchainError) -> Self {
-        Self::Swapchain(e)
-    }
-}
-
-impl From<DeviceCreationError> for DeviceError {
-    fn from(e: DeviceCreationError) -> Self {
-        Self::Creation(e)
-    }
 }

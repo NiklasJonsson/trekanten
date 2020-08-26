@@ -30,7 +30,7 @@ impl Drop for Instance {
 fn check_extensions<T: AsRef<CStr>>(
     required: &[T],
     available: &[ash::vk::ExtensionProperties],
-) -> Result<(), InstanceCreationError> {
+) -> Result<(), InstanceError> {
     for req in required.iter() {
         let mut found = false;
         for avail in available.iter() {
@@ -42,8 +42,8 @@ fn check_extensions<T: AsRef<CStr>>(
         }
 
         if !found {
-            let c_string: CString = req.as_ref().to_owned();
-            return Err(InstanceCreationError::MissingExtension(c_string));
+            let string: String = req.as_ref().to_owned().into_string().expect("CString to String failed");
+            return Err(InstanceError::MissingExtension(string));
         }
     }
 
@@ -101,10 +101,10 @@ pub fn choose_validation_layers(entry: &Entry) -> Vec<CString> {
 fn choose_instance_extensions<T: AsRef<str>>(
     entry: &Entry,
     required_window_extensions: &[T],
-) -> Result<Vec<CString>, InstanceCreationError> {
+) -> Result<Vec<CString>, InstanceError> {
     let available = entry
         .enumerate_instance_extension_properties()
-        .map_err(InstanceCreationError::ExtensionEnumeration)?;
+        .map_err(|e| InstanceError::InternalVulkan(e, "Instance extension enumeration"))?;
     let required = required_window_extensions
         .iter()
         .map(|x| CString::new(x.as_ref()).expect("CString failed!"))
@@ -159,7 +159,7 @@ impl Instance {
         let vk_instance = unsafe {
             entry
                 .create_instance(&create_info, None)
-                .map_err(InstanceCreationError::from)?
+                .map_err(InstanceError::from)?
         };
 
         let _owned_layers = vec_cstring_from_raw(layers_ptrs);
