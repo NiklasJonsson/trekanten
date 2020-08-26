@@ -12,63 +12,12 @@ use crate::device::HasVkDevice;
 use crate::device::VkDeviceHandle;
 use crate::render_pass::RenderPass;
 use crate::resource::{Handle, Storage};
-use crate::spirv::{parse_descriptor_sets, DescriptorSetLayouts, SpirvError};
+use crate::spirv::{parse_descriptor_sets, DescriptorSetLayouts};
 use crate::util;
 use crate::vertex::VertexDefinition;
 
-#[derive(Debug)]
-pub enum ShaderModuleError {
-    Creation(ash::vk::Result),
-}
-
-impl std::error::Error for ShaderModuleError {}
-impl std::fmt::Display for ShaderModuleError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<vk::Result> for ShaderModuleError {
-    fn from(r: vk::Result) -> Self {
-        Self::Creation(r)
-    }
-}
-
-// TODO: Cleanup PipelineError/PipelineBuilderError
-#[derive(Debug)]
-pub enum PipelineError {
-    IO(std::io::Error),
-    ShaderModule(ShaderModuleError),
-    PipelineLayoutCreation(vk::Result),
-    PipelineCreation(vk::Result),
-    DescriptorSetLayout(vk::Result),
-    Builder(PipelineBuilderError),
-}
-
-impl std::error::Error for PipelineError {}
-impl std::fmt::Display for PipelineError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<std::io::Error> for PipelineError {
-    fn from(e: std::io::Error) -> Self {
-        Self::IO(e)
-    }
-}
-
-impl From<ShaderModuleError> for PipelineError {
-    fn from(sme: ShaderModuleError) -> Self {
-        Self::ShaderModule(sme)
-    }
-}
-
-impl From<PipelineBuilderError> for PipelineError {
-    fn from(e: PipelineBuilderError) -> Self {
-        Self::Builder(e)
-    }
-}
+mod error;
+pub use error::PipelineError;
 
 struct RawShader {
     pub data: Vec<u32>,
@@ -104,12 +53,16 @@ impl std::ops::Drop for ShaderModule {
 }
 
 impl ShaderModule {
-    pub fn new(device: &Device, raw: &RawShader) -> Result<Self, ShaderModuleError> {
+    pub fn new(device: &Device, raw: &RawShader) -> Result<Self, PipelineError> {
         let info = vk::ShaderModuleCreateInfo::builder().code(&raw.data);
 
         let vk_device = device.vk_device();
 
-        let vk_shader_module = unsafe { vk_device.create_shader_module(&info, None) }?;
+        let vk_shader_module = unsafe {
+            vk_device
+                .create_shader_module(&info, None)
+                .map_err(|e| PipelineError::VulkanObjectCreation(e, "Shader module"))?
+        };
 
         Ok(Self {
             vk_device,
@@ -127,7 +80,6 @@ pub trait Pipeline {
 pub struct GraphicsPipeline {
     vk_device: VkDeviceHandle,
     vk_pipeline: vk::Pipeline,
-    // TODO: Do we really need to keep these?
     vk_pipeline_layout: vk::PipelineLayout,
     vk_descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
 }
@@ -179,24 +131,6 @@ struct VertexInputDescription<'a> {
     _attribute_description: &'a [vk::VertexInputAttributeDescription],
     create_info: vk::PipelineVertexInputStateCreateInfo,
 }
-
-#[derive(Debug)]
-pub enum PipelineBuilderError {
-    MissingVertexShader,
-    MissingFragmentShader,
-    MissingVertexDescription,
-    MissingViewportState,
-    MissingRenderPass,
-    InvalidShader(SpirvError),
-}
-
-impl std::error::Error for PipelineBuilderError {}
-impl std::fmt::Display for PipelineBuilderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 pub struct GraphicsPipelineBuilder<'a> {
     device: &'a Device,
     entry_name: CString,
@@ -236,8 +170,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             .name(&self.entry_name)
             .build();
 
-        let new_desc_sets =
-            parse_descriptor_sets(&raw.data).map_err(PipelineBuilderError::InvalidShader)?;
+        let new_desc_sets = parse_descriptor_sets(&raw.data).map_err(PipelineError::Reflection)?;
 
         self.refl_descriptor_set_layouts.append(new_desc_sets);
 
@@ -287,19 +220,21 @@ impl<'a> GraphicsPipelineBuilder<'a> {
     }
 
     pub fn build(self) -> Result<GraphicsPipeline, PipelineError> {
-        let vert = self.vert.ok_or(PipelineBuilderError::MissingVertexShader)?;
+        let vert = self
+            .vert
+            .ok_or(PipelineError::MissingArg("vertex shader"))?;
         let frag = self
             .frag
-            .ok_or(PipelineBuilderError::MissingFragmentShader)?;
+            .ok_or(PipelineError::MissingArg("fragment shader"))?;
         let vertex_input = self
             .vertex_input
-            .ok_or(PipelineBuilderError::MissingVertexDescription)?;
+            .ok_or(PipelineError::MissingArg("vertex description"))?;
         let viewport_extent = self
             .viewport_extent
-            .ok_or(PipelineBuilderError::MissingViewportState)?;
+            .ok_or(PipelineError::MissingArg("viewport extent"))?;
         let render_pass = self
             .render_pass
-            .ok_or(PipelineBuilderError::MissingRenderPass)?;
+            .ok_or(PipelineError::MissingArg("render pass"))?;
 
         let vk_device = self.device.vk_device();
         let stages = [vert.create_info, frag.create_info];
@@ -337,7 +272,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
             let dset_layout = unsafe {
                 vk_device
                     .create_descriptor_set_layout(&info, None)
-                    .map_err(PipelineError::DescriptorSetLayout)?
+                    .map_err(|e| PipelineError::VulkanObjectCreation(e, "Descriptor set layout"))?
             };
 
             descriptor_set_layouts.push(dset_layout);
@@ -349,7 +284,7 @@ impl<'a> GraphicsPipelineBuilder<'a> {
         let pipeline_layout = unsafe {
             vk_device
                 .create_pipeline_layout(&pipeline_layout_info, None)
-                .map_err(PipelineError::PipelineLayoutCreation)?
+                .map_err(|e| PipelineError::VulkanObjectCreation(e, "Pipeline layout"))?
         };
 
         let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder()
@@ -402,8 +337,8 @@ impl<'a> GraphicsPipelineBuilder<'a> {
         // According to: https://renderdoc.org/vkspec_chunked/chap10.html#pipelines-multiple
         // Implementations will attempt to create as many pipelines as possible, but if any fail, we really want to exit anyway.
 
-        let pipelines =
-            vk_pipelines_result.map_err(|(_vec, e)| PipelineError::PipelineCreation(e))?;
+        let pipelines = vk_pipelines_result
+            .map_err(|(_vec, e)| PipelineError::VulkanObjectCreation(e, "Pipeline(s)"))?;
 
         assert_eq!(pipelines.len(), 1, "Expected single pipeline");
 

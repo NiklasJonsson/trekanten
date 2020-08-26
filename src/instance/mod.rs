@@ -42,7 +42,11 @@ fn check_extensions<T: AsRef<CStr>>(
         }
 
         if !found {
-            let string: String = req.as_ref().to_owned().into_string().expect("CString to String failed");
+            let string: String = req
+                .as_ref()
+                .to_owned()
+                .into_string()
+                .expect("CString to String failed");
             return Err(InstanceError::MissingExtension(string));
         }
     }

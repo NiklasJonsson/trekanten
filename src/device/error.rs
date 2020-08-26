@@ -5,7 +5,6 @@ use thiserror::Error;
 use super::device_selection::DeviceSuitability;
 use crate::surface::SurfaceError;
 
-
 #[derive(Error, Debug)]
 pub enum DeviceCreationError {
     #[error("creation failed: {0}")]
