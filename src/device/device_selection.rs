@@ -156,6 +156,7 @@ pub enum DeviceSuitability {
     MissingRequiredFeatures,
     MissingGraphicsQueue,
     MissingPresentQueue,
+    MissingDepthFormat,
     UnsuitableSwapchainFormat,
     UnsuitableSwapchainPresentMode,
     MissingMipmapGenerationSupport,
@@ -226,6 +227,10 @@ fn check_device_suitability(
 
     if !device_supports_mipmap_generation(instance, device) {
         return Ok(DeviceSuitability::MissingMipmapGenerationSupport);
+    }
+
+    if super::find_depth_format(instance, device).is_none() {
+        return Ok(DeviceSuitability::MissingDepthFormat);
     }
 
     let fams = find_queue_families(instance, device, surface)?;

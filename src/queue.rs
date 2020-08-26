@@ -1,30 +1,21 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use thiserror::Error;
+
 use crate::device::VkDeviceHandle;
 
 use crate::command::CommandBuffer;
 use crate::device::HasVkDevice;
 use crate::sync::Fence;
-use crate::sync::FenceError;
+use crate::sync::SyncError;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Error)]
 pub enum QueueError {
+    #[error("Failed to submit on queue {0}")]
     Submit(vk::Result),
-    Fence(FenceError),
-}
-
-impl std::error::Error for QueueError {}
-impl std::fmt::Display for QueueError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<FenceError> for QueueError {
-    fn from(e: FenceError) -> Self {
-        Self::Fence(e)
-    }
+    #[error("Failed to wait on fence {0}")]
+    Fence(#[from] SyncError),
 }
 
 #[derive(Clone, Debug)]

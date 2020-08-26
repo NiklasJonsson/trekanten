@@ -2,6 +2,8 @@ use ash::vk;
 
 use vk_mem::{Allocation, AllocationCreateInfo, AllocationInfo, MemoryUsage};
 
+use thiserror::Error;
+
 use crate::command::CommandBuffer;
 use crate::command::CommandError;
 use crate::command::CommandPool;
@@ -11,21 +13,20 @@ use crate::queue::Queue;
 use crate::queue::QueueError;
 use crate::util;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum MemoryError {
+    #[error("Failed to create buffer {0}")]
     BufferCreation(vk_mem::Error),
+    #[error("Failed to create image {0}")]
     ImageCreation(vk_mem::Error),
-    CopyCommand(CommandError),
-    CopySubmit(QueueError),
+    #[error("command error during copy {0}")]
+    CopyCommand(#[from] CommandError),
+    #[error("queue submission failed {0}")]
+    CopySubmit(#[from] QueueError),
+    #[error("memory mapping failed {0}")]
     MemoryMapping(vk_mem::Error),
 }
 
-impl std::error::Error for MemoryError {}
-impl std::fmt::Display for MemoryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
 pub struct DeviceBuffer {
     allocator: AllocatorHandle,
     vk_buffer: vk::Buffer,
@@ -118,15 +119,11 @@ impl DeviceBuffer {
         )?;
 
         let cmd_buf = command_pool
-            .begin_single_submit()
-            .map_err(MemoryError::CopyCommand)?
+            .begin_single_submit()?
             .copy_buffer(staging.vk_buffer(), dst_buffer.vk_buffer(), staging.size())
-            .end()
-            .map_err(MemoryError::CopyCommand)?;
+            .end()?;
 
-        queue
-            .submit_and_wait(&cmd_buf)
-            .map_err(MemoryError::CopySubmit)?;
+        queue.submit_and_wait(&cmd_buf)?;
 
         Ok(dst_buffer)
     }
@@ -431,9 +428,7 @@ impl DeviceImage {
         )?;
 
         // Transitioned to SHADER_READ_ONLY_OPTIMAL during mipmap generation
-        let cmd_buf = command_pool
-            .begin_single_submit()
-            .map_err(MemoryError::CopyCommand)?;
+        let cmd_buf = command_pool.begin_single_submit()?;
 
         let cmd_buf = transition_image_layout(
             cmd_buf,
@@ -445,13 +440,9 @@ impl DeviceImage {
         )
         .copy_buffer_to_image(&staging.vk_buffer, dst_image.vk_image(), &extent);
 
-        let cmd_buf = generate_mipmaps(cmd_buf, dst_image.vk_image(), &extent, mip_levels)
-            .end()
-            .map_err(MemoryError::CopyCommand)?;
+        let cmd_buf = generate_mipmaps(cmd_buf, dst_image.vk_image(), &extent, mip_levels).end()?;
 
-        queue
-            .submit_and_wait(&cmd_buf)
-            .map_err(MemoryError::CopySubmit)?;
+        queue.submit_and_wait(&cmd_buf)?;
 
         Ok(dst_image)
     }

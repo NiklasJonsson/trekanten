@@ -3,11 +3,13 @@ use std::path::PathBuf;
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use thiserror::Error;
+
 use crate::command::CommandPool;
 use crate::device::Device;
 use crate::device::HasVkDevice;
 use crate::device::VkDeviceHandle;
-use crate::image::ImageView;
+use crate::image::{ImageView, ImageViewError};
 use crate::mem::DeviceImage;
 use crate::mem::MemoryError;
 use crate::queue::Queue;
@@ -15,18 +17,16 @@ use crate::resource::{CachedStorage, Handle};
 
 use crate::util;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum TextureError {
-    FileLoading(image::ImageError),
-    Memory(MemoryError),
+    #[error("Failed to load texture data: {0}")]
+    Loading(#[from] image::ImageError),
+    #[error("Memory error: {0}")]
+    Memory(#[from] MemoryError),
+    #[error("Failed to create sampler: {0}")]
     Sampler(vk::Result),
-}
-
-impl std::error::Error for TextureError {}
-impl std::fmt::Display for TextureError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
+    #[error("Failed to create image view: {0}")]
+    ImageView(#[from] ImageViewError),
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -41,9 +41,9 @@ impl TextureDescriptor {
 }
 
 pub fn load_image(desc: &TextureDescriptor) -> Result<image::RgbaImage, image::ImageError> {
-    let path = desc.file_path.to_str().expect("Failed to create path");
+    let path = &desc.file_path;
 
-    log::trace!("Trying to load image from {}", path);
+    log::trace!("Trying to load image from {}", path.display());
     let image = image::open(path)?.to_rgba();
 
     log::trace!(
@@ -118,7 +118,7 @@ impl Texture {
         command_pool: &CommandPool,
         descriptor: &TextureDescriptor,
     ) -> Result<Self, TextureError> {
-        let image = load_image(descriptor).map_err(TextureError::FileLoading)?;
+        let image = load_image(descriptor)?;
         let extents = util::Extent2D {
             width: image.width(),
             height: image.height(),
@@ -137,14 +137,12 @@ impl Texture {
             format,
             mip_levels,
             &raw_image_data,
-        )
-        .map_err(TextureError::Memory)?;
+        )?;
 
         let aspect = vk::ImageAspectFlags::COLOR;
 
         let image_view =
-            ImageView::new(device, device_image.vk_image(), format, aspect, mip_levels)
-                .expect("Failed to create image view");
+            ImageView::new(device, device_image.vk_image(), format, aspect, mip_levels)?;
 
         let sampler = Sampler::new(device)?;
 

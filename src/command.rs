@@ -16,8 +16,6 @@ use crate::queue::QueueFamily;
 use crate::render_pass::RenderPass;
 use crate::util;
 
-// TODO: Merge errors
-
 #[derive(Debug, Error)]
 pub enum CommandError {
     #[error("Command pool creation failed: {0}")]

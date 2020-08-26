@@ -42,6 +42,10 @@ impl<T> Handle<T> {
     pub fn as_buffered(&self) -> Handle<[T; 2]> {
         Handle::<[T; 2]>::new(self.id)
     }
+
+    pub fn id(&self) -> ID {
+        self.id
+    }
 }
 
 impl<T> Clone for Handle<T> {

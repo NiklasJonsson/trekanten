@@ -105,7 +105,10 @@ fn find_supported_format(
     None
 }
 
-fn find_depth_format(instance: &Instance, vk_phys_device: &vk::PhysicalDevice) -> vk::Format {
+fn find_depth_format(
+    instance: &Instance,
+    vk_phys_device: &vk::PhysicalDevice,
+) -> Option<vk::Format> {
     let cands = [
         vk::Format::D32_SFLOAT,
         vk::Format::D32_SFLOAT_S8_UINT,
@@ -118,7 +121,6 @@ fn find_depth_format(instance: &Instance, vk_phys_device: &vk::PhysicalDevice) -
         vk::ImageTiling::OPTIMAL,
         vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
     )
-    .expect("Device does not support required depth formats")
 }
 
 fn get_max_supported_msaa(flags: vk::SampleCountFlags) -> vk::SampleCountFlags {
@@ -162,7 +164,8 @@ impl Device {
                 .vk_instance()
                 .get_physical_device_memory_properties(vk_phys_device);
 
-            let depth_buffer_format = find_depth_format(instance, &vk_phys_device);
+            let depth_buffer_format = find_depth_format(instance, &vk_phys_device)
+                .expect("Missing depth buffer format, this device should not have been created");
 
             let vk_props = instance
                 .vk_instance()
@@ -187,15 +190,12 @@ impl Device {
             present_queue,
         };
 
-        let allocator = Rc::new(
-            Allocator::new(&vk_mem::AllocatorCreateInfo {
-                physical_device: vk_phys_device,
-                device: (*vk_device).clone(),
-                instance: instance.vk_instance().clone(),
-                ..Default::default()
-            })
-            .expect("Allocator creation failure"),
-        );
+        let allocator = Rc::new(Allocator::new(&vk_mem::AllocatorCreateInfo {
+            physical_device: vk_phys_device,
+            device: (*vk_device).clone(),
+            instance: instance.vk_instance().clone(),
+            ..Default::default()
+        })?);
 
         let inner_device = InnerDevice { vk_device };
 

@@ -1,21 +1,17 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use thiserror::Error;
+
 use crate::device::VkDeviceHandle;
 
 use crate::device::Device;
 use crate::device::HasVkDevice;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Error, Debug)]
 pub enum RenderPassError {
+    #[error("Render pass creation failed")]
     Creation(vk::Result),
-}
-
-impl std::error::Error for RenderPassError {}
-impl std::fmt::Display for RenderPassError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
 
 pub struct RenderPass {

@@ -372,20 +372,6 @@ impl GraphicsPipelineDescriptor {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum BuilderError {
-    MissingVertexShader,
-    MissingFragmentShader,
-    MissingVertexDescription,
-}
-
-impl std::error::Error for BuilderError {}
-impl std::fmt::Display for BuilderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 pub struct GraphicsPipelineDescriptorBuilder {
     vert: Option<PathBuf>,
     frag: Option<PathBuf>,
@@ -413,11 +399,15 @@ impl GraphicsPipelineDescriptorBuilder {
         self
     }
 
-    pub fn build(self) -> Result<GraphicsPipelineDescriptor, BuilderError> {
-        let vert = self.vert.ok_or(BuilderError::MissingVertexShader)?;
-        let frag = self.frag.ok_or(BuilderError::MissingFragmentShader)?;
+    pub fn build(self) -> Result<GraphicsPipelineDescriptor, PipelineError> {
+        let vert = self
+            .vert
+            .ok_or(PipelineError::MissingArg("vertex shader"))?;
+        let frag = self
+            .frag
+            .ok_or(PipelineError::MissingArg("fragment shader"))?;
         if self.vert_binding_description.is_empty() || self.vert_attribute_description.is_empty() {
-            return Err(BuilderError::MissingVertexDescription);
+            return Err(PipelineError::MissingArg("vertex description"));
         }
 
         let vert_binding_description = self.vert_binding_description;

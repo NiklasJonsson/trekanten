@@ -2,6 +2,8 @@ use ash::vk;
 
 use ash::version::DeviceV1_0;
 
+use thiserror::Error;
+
 use crate::device::Device;
 use crate::device::HasVkDevice;
 use crate::device::VkDeviceHandle;
@@ -11,16 +13,12 @@ use crate::uniform::UniformBuffer;
 
 use crate::common::MAX_FRAMES_IN_FLIGHT;
 
-#[derive(Debug)]
-pub enum DescriptorSetError {
-    Allocation(vk::Result),
-}
-
-impl std::error::Error for DescriptorSetError {}
-impl std::fmt::Display for DescriptorSetError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
+#[derive(Debug, Error)]
+pub enum DescriptorError {
+    #[error("Failed to allocate descriptor set: {0}")]
+    PoolCreation(vk::Result),
+    #[error("Failed to allocate descriptor set: {0}")]
+    SetAllocation(vk::Result),
 }
 
 struct DescriptorPool {
@@ -39,7 +37,7 @@ impl std::ops::Drop for DescriptorPool {
 }
 
 impl DescriptorPool {
-    fn new(device: &Device) -> Self {
+    fn new(device: &Device) -> Result<Self, DescriptorError> {
         let pool_sizes = [
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
@@ -59,21 +57,21 @@ impl DescriptorPool {
             device
                 .vk_device()
                 .create_descriptor_pool(&pool_create_info, None)
-                .expect("Failed!")
+                .map_err(DescriptorError::PoolCreation)?
         };
 
-        Self {
+        Ok(Self {
             vk_device: device.vk_device(),
             vk_descriptor_pool,
             n_allocated: 0,
-        }
+        })
     }
 
     fn alloc(
         &mut self,
         layout: &vk::DescriptorSetLayout,
         count: usize,
-    ) -> Result<Vec<DescriptorSet>, DescriptorSetError> {
+    ) -> Result<Vec<DescriptorSet>, DescriptorError> {
         let layouts = vec![*layout; count];
         let info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(self.vk_descriptor_pool)
@@ -82,7 +80,7 @@ impl DescriptorPool {
         let desc_sets: Vec<DescriptorSet> = unsafe {
             self.vk_device
                 .allocate_descriptor_sets(&info)
-                .map_err(DescriptorSetError::Allocation)?
+                .map_err(DescriptorError::SetAllocation)?
                 .into_iter()
                 .map(DescriptorSet::new)
                 .collect()
@@ -167,18 +165,18 @@ pub struct DescriptorSets {
 }
 
 impl DescriptorSets {
-    pub fn new(device: &Device) -> Self {
-        Self {
+    pub fn new(device: &Device) -> Result<Self, DescriptorError> {
+        Ok(Self {
             vk_device: device.vk_device(),
-            descriptor_pool: DescriptorPool::new(device),
+            descriptor_pool: DescriptorPool::new(device)?,
             storage: Default::default(),
-        }
+        })
     }
 
     pub fn create<'a>(
         &mut self,
         descriptor: DescriptorSetDescriptor<'a>,
-    ) -> Result<Handle<DescriptorSet>, DescriptorSetError> {
+    ) -> Result<Handle<DescriptorSet>, DescriptorError> {
         let mut desc_sets = self
             .descriptor_pool
             .alloc(&descriptor.layout, MAX_FRAMES_IN_FLIGHT)?;

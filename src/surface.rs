@@ -1,23 +1,17 @@
 use ash::extensions::khr::Surface as SurfaceLoader;
 use ash::vk;
 
+use thiserror::Error;
+
 use crate::instance::Instance;
 use crate::util::lifetime::LifetimeToken;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Error, Clone)]
 pub enum SurfaceError {
+    #[error("Creation failed {0}")]
     Creation(vk::Result),
-    SupportQuery(vk::Result),
-    CapabilitesQuery(vk::Result),
-    FormatsQuery(vk::Result),
-    PresentModesQuery(vk::Result),
-}
-
-impl std::error::Error for SurfaceError {}
-impl std::fmt::Display for SurfaceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
+    #[error("Query for surface {1} failed with {0}")]
+    Query(vk::Result, &'static str),
 }
 
 pub struct Surface {
@@ -51,7 +45,7 @@ impl Surface {
         unsafe {
             self.loader
                 .get_physical_device_surface_support(*phys_device, queue_index, self.handle)
-                .map_err(SurfaceError::SupportQuery)
+                .map_err(|e| SurfaceError::Query(e, "support"))
         }
     }
 
@@ -62,7 +56,7 @@ impl Surface {
         unsafe {
             self.loader
                 .get_physical_device_surface_capabilities(*phys_device, self.handle)
-                .map_err(SurfaceError::CapabilitesQuery)
+                .map_err(|e| SurfaceError::Query(e, "capabilities"))
         }
     }
 
@@ -73,7 +67,7 @@ impl Surface {
         unsafe {
             self.loader
                 .get_physical_device_surface_formats(*phys_device, self.handle)
-                .map_err(SurfaceError::FormatsQuery)
+                .map_err(|e| SurfaceError::Query(e, "formats"))
         }
     }
 
@@ -84,7 +78,7 @@ impl Surface {
         unsafe {
             self.loader
                 .get_physical_device_surface_present_modes(*phys_device, self.handle)
-                .map_err(SurfaceError::PresentModesQuery)
+                .map_err(|e| SurfaceError::Query(e, "present modes"))
         }
     }
 

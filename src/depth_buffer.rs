@@ -1,21 +1,18 @@
 use ash::vk;
 
+use thiserror::Error;
+
 use crate::device::Device;
 use crate::image::{ImageView, ImageViewError};
 use crate::mem::{DeviceImage, MemoryError};
 use crate::util;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DepthBufferError {
-    Memory(MemoryError),
-    ImageView(ImageViewError),
-}
-
-impl std::error::Error for DepthBufferError {}
-impl std::fmt::Display for DepthBufferError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
+    #[error("Depth buffer memory error: {0}")]
+    Memory(#[from] MemoryError),
+    #[error("Depth buffer image view error: {0}")]
+    ImageView(#[from] ImageViewError),
 }
 
 pub struct DepthBuffer {
@@ -42,16 +39,14 @@ impl DepthBuffer {
             props,
             mip_levels,
             msaa_sample_count,
-        )
-        .map_err(DepthBufferError::Memory)?;
+        )?;
         let image_view = ImageView::new(
             device,
             _image.vk_image(),
             format,
             vk::ImageAspectFlags::DEPTH,
             mip_levels,
-        )
-        .map_err(DepthBufferError::ImageView)?;
+        )?;
         Ok(Self {
             _image,
             image_view,

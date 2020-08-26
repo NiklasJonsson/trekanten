@@ -1,20 +1,22 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use thiserror::Error;
+
 use crate::device::VkDeviceHandle;
 
 use crate::device::HasVkDevice;
 
-#[derive(Debug, Copy, Clone)]
-pub enum SemaphoreError {
-    Creation(vk::Result),
-}
-
-impl std::error::Error for SemaphoreError {}
-impl std::fmt::Display for SemaphoreError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
+#[derive(Debug, Copy, Clone, Error)]
+pub enum SyncError {
+    #[error("Semaphore creation failed {0}")]
+    SemaphoreCreation(vk::Result),
+    #[error("Febce creation failed {0}")]
+    FenceCreation(vk::Result),
+    #[error("Couldn't wait on fence {0}")]
+    FenceAwait(vk::Result),
+    #[error("Couldn't reset fence {0}")]
+    FenceReset(vk::Result),
 }
 
 #[derive(Clone)]
@@ -32,14 +34,14 @@ impl std::ops::Drop for Semaphore {
 }
 
 impl Semaphore {
-    pub fn new<D: HasVkDevice>(device: &D) -> Result<Self, SemaphoreError> {
+    pub fn new<D: HasVkDevice>(device: &D) -> Result<Self, SyncError> {
         let vk_device = device.vk_device();
         let info = vk::SemaphoreCreateInfo::default();
 
         let vk_semaphore = unsafe {
             vk_device
                 .create_semaphore(&info, None)
-                .map_err(SemaphoreError::Creation)?
+                .map_err(SyncError::SemaphoreCreation)?
         };
 
         Ok(Self {
@@ -50,20 +52,6 @@ impl Semaphore {
 
     pub fn vk_semaphore(&self) -> &vk::Semaphore {
         &self.vk_semaphore
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum FenceError {
-    Creation(vk::Result),
-    Await(vk::Result),
-    Reset(vk::Result),
-}
-
-impl std::error::Error for FenceError {}
-impl std::fmt::Display for FenceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
     }
 }
 
@@ -82,7 +70,7 @@ impl std::ops::Drop for Fence {
 }
 
 impl Fence {
-    fn new<D: HasVkDevice>(device: &D, flags: vk::FenceCreateFlags) -> Result<Self, FenceError> {
+    fn new<D: HasVkDevice>(device: &D, flags: vk::FenceCreateFlags) -> Result<Self, SyncError> {
         let vk_device = device.vk_device();
         let info = vk::FenceCreateInfo {
             flags,
@@ -92,7 +80,7 @@ impl Fence {
         let vk_fence = unsafe {
             vk_device
                 .create_fence(&info, None)
-                .map_err(FenceError::Creation)?
+                .map_err(SyncError::FenceCreation)?
         };
 
         Ok(Self {
@@ -101,11 +89,11 @@ impl Fence {
         })
     }
 
-    pub fn signaled<D: HasVkDevice>(device: &D) -> Result<Self, FenceError> {
+    pub fn signaled<D: HasVkDevice>(device: &D) -> Result<Self, SyncError> {
         Self::new(device, vk::FenceCreateFlags::SIGNALED)
     }
 
-    pub fn unsignaled<D: HasVkDevice>(device: &D) -> Result<Self, FenceError> {
+    pub fn unsignaled<D: HasVkDevice>(device: &D) -> Result<Self, SyncError> {
         Self::new(device, vk::FenceCreateFlags::empty())
     }
 
@@ -113,23 +101,23 @@ impl Fence {
         &self.vk_fence
     }
 
-    pub fn blocking_wait(&self) -> Result<(), FenceError> {
+    pub fn blocking_wait(&self) -> Result<(), SyncError> {
         let fences = [self.vk_fence];
         unsafe {
             self.vk_device
                 .wait_for_fences(&fences, true, u64::MAX)
-                .map_err(FenceError::Await)?;
+                .map_err(SyncError::FenceAwait)?;
         }
 
         Ok(())
     }
 
-    pub fn reset(&self) -> Result<(), FenceError> {
+    pub fn reset(&self) -> Result<(), SyncError> {
         let fences = [self.vk_fence];
         unsafe {
             self.vk_device
                 .reset_fences(&fences)
-                .map_err(FenceError::Reset)?;
+                .map_err(SyncError::FenceReset)?;
         }
 
         Ok(())

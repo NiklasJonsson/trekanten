@@ -1,6 +1,8 @@
 use ash::extensions::khr::Swapchain as SwapchainLoader;
 use ash::vk;
 
+use thiserror::Error;
+
 use crate::device::VkDeviceHandle;
 
 use crate::color_buffer::ColorBuffer;
@@ -16,37 +18,23 @@ use crate::surface::{Surface, SurfaceError};
 use crate::sync::Semaphore;
 use crate::util;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
 pub enum SwapchainError {
-    Creation(vk::Result),
-    ImageCreation(vk::Result),
-    ImageViewCreation(ImageViewError),
-    FramebufferCreation(FramebufferError),
+    #[error("Vulkan object creation failed: {1} {0}")]
+    VulkanObjectCreation(vk::Result, &'static str),
+    #[error("Image view creation failed: {0}")]
+    ImageView(#[from] ImageViewError),
+    #[error("Framebuffer creation failed: {0}")]
+    Framebuffer(#[from] FramebufferError),
+    #[error("Failed to acquire next image {0}")]
     AcquireNextImage(vk::Result),
+    #[error("Failed to enqueue present command {0}")]
     EnqueuePresent(vk::Result),
-    Surface(SurfaceError),
+    #[error("Swapchain surface issue {0}")]
+    Surface(#[from] SurfaceError),
+    #[error("Swapchain out of date")]
     OutOfDate,
 }
-
-impl std::error::Error for SwapchainError {}
-impl std::fmt::Display for SwapchainError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<ImageViewError> for SwapchainError {
-    fn from(e: ImageViewError) -> Self {
-        Self::ImageViewCreation(e)
-    }
-}
-
-impl From<SurfaceError> for SwapchainError {
-    fn from(e: SurfaceError) -> Self {
-        Self::Surface(e)
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum SwapchainStatus {
     Optimal,
@@ -182,17 +170,15 @@ impl Swapchain {
         let handle = unsafe {
             loader
                 .create_swapchain(&info, None)
-                .map_err(SwapchainError::Creation)?
+                .map_err(|e| SwapchainError::VulkanObjectCreation(e, "Swapchain"))?
         };
 
         let images = unsafe {
             loader
                 .get_swapchain_images(handle)
-                .map_err(SwapchainError::ImageCreation)?
+                .map_err(|e| SwapchainError::VulkanObjectCreation(e, "Image"))?
         };
 
-        // Store a lightweight representation of the info
-        // TODO: Store full?
         let vk::SwapchainCreateInfoKHR {
             image_format,
             image_extent,
@@ -218,8 +204,7 @@ impl Swapchain {
                     mip_levels,
                 )
             })
-            .collect::<Result<Vec<_>, ImageViewError>>()
-            .map_err(SwapchainError::ImageViewCreation)?;
+            .collect::<Result<Vec<_>, ImageViewError>>()?;
 
         Ok(Self {
             loader,
@@ -249,7 +234,7 @@ impl Swapchain {
                 Framebuffer::new(&self.vk_device, &views, render_pass, &self.info.extent)
             })
             .collect::<Result<Vec<_>, FramebufferError>>()
-            .map_err(SwapchainError::FramebufferCreation)
+            .map_err(SwapchainError::Framebuffer)
     }
 
     pub fn acquire_next_image(&self, sem: Option<&Semaphore>) -> Result<u32, SwapchainError> {

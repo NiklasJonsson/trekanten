@@ -1,26 +1,17 @@
 use ash::vk;
 
+use thiserror::Error;
+
 use spirv_reflect::types::descriptor::ReflectDescriptorType;
 use spirv_reflect::types::variable::ReflectShaderStageFlags;
 use spirv_reflect::ShaderModule;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SpirvError {
+    #[error("Couldn't load spirv: {0}")]
     Loading(&'static str),
+    #[error("Couldn't parse spirv: {0}")]
     Parsing(&'static str),
-}
-
-impl std::error::Error for SpirvError {}
-impl std::fmt::Display for SpirvError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<&'static str> for SpirvError {
-    fn from(s: &'static str) -> Self {
-        Self::Parsing(s)
-    }
 }
 
 #[derive(Debug)]
@@ -85,7 +76,9 @@ fn map_descriptor_type(refl_desc_ty: &ReflectDescriptorType) -> vk::DescriptorTy
 
 pub fn parse_descriptor_sets(spv_data: &[u32]) -> Result<DescriptorSetLayouts, SpirvError> {
     let module = ShaderModule::load_u32_data(spv_data).map_err(SpirvError::Loading)?;
-    let desc_sets = module.enumerate_descriptor_sets(None)?;
+    let desc_sets = module
+        .enumerate_descriptor_sets(None)
+        .map_err(SpirvError::Parsing)?;
     let shader_stage = map_shader_stage_flags(&module.get_shader_stage());
     let mut ret = Vec::with_capacity(desc_sets.len());
     for refl_desc_set in desc_sets.iter() {

@@ -1,6 +1,8 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use thiserror::Error;
+
 use crate::device::VkDeviceHandle;
 
 use crate::device::HasVkDevice;
@@ -8,16 +10,10 @@ use crate::image::ImageView;
 use crate::render_pass::RenderPass;
 use crate::util;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum FramebufferError {
+    #[error("Framebuffer creation failed: {0}")]
     Creation(vk::Result),
-}
-
-impl std::error::Error for FramebufferError {}
-impl std::fmt::Display for FramebufferError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
 
 pub struct Framebuffer {

@@ -35,38 +35,11 @@ use common::MAX_FRAMES_IN_FLIGHT;
 
 // Notes:
 // We can have N number of swapchain images, it depends on the backing presentation implementation.
-// Generally, we are aiming for three images + MAILBOX (render one and use the latest of the two
-// waiting)
-// Per swapchain image resources:
-// - Framebuffer
-// - Pre-recorded command buffers (as they are bound to framebuffers, which is 1 per sc image)
+// Generally, we are aiming for three images + MAILBOX (render one and use the latest of the two waiting)
 //
-// We use N (2, hardcoded atm) frames in flight at once. This allows us to start the next framedirectly after we render. Whenever next_frame() is called, it can be though of as binding one of the two frames to a particular swapchain image. All rendering in that frame will be bound to that.
-
-#[derive(Debug)]
-pub enum FrameSynchronizationError {
-    Semaphore(sync::SemaphoreError),
-    Fence(sync::FenceError),
-}
-
-impl std::error::Error for FrameSynchronizationError {}
-impl std::fmt::Display for FrameSynchronizationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<sync::SemaphoreError> for FrameSynchronizationError {
-    fn from(e: sync::SemaphoreError) -> Self {
-        Self::Semaphore(e)
-    }
-}
-
-impl From<sync::FenceError> for FrameSynchronizationError {
-    fn from(e: sync::FenceError) -> Self {
-        Self::Fence(e)
-    }
-}
+// We use MAX_FRAMES_IN_FLIGHT (2, hardcoded atm) frames in flight at once. This allows us to start the next frame directly after we render.
+// Whenever next_frame() is called, it can be thought of as binding one of the two frames to a particular swapchain image.
+// All rendering in that frame will be done on that swapchain image/framebuffer.
 
 pub struct FrameSynchronization {
     pub image_available: sync::Semaphore,
@@ -75,7 +48,7 @@ pub struct FrameSynchronization {
 }
 
 impl FrameSynchronization {
-    pub fn new(device: &device::Device) -> Result<Self, FrameSynchronizationError> {
+    pub fn new(device: &device::Device) -> Result<Self, sync::SyncError> {
         let image_avail = sync::Semaphore::new(device)?;
         let render_done = sync::Semaphore::new(device)?;
         let in_flight = sync::Fence::signaled(device)?;
@@ -172,15 +145,13 @@ fn create_swapchain_and_co(
         render_pass::RenderPass::new(&device, swapchain.info().format, msaa_sample_count)?;
 
     let image_to_frame_idx: Vec<Option<u32>> = (0..swapchain.num_images()).map(|_| None).collect();
-    let depth_buffer =
-        depth_buffer::DepthBuffer::new(device, extent, msaa_sample_count).expect("FAIL");
+    let depth_buffer = depth_buffer::DepthBuffer::new(device, extent, msaa_sample_count)?;
     let color_buffer = color_buffer::ColorBuffer::new(
         device,
         swapchain.info().format.into(),
         extent,
         msaa_sample_count,
-    )
-    .expect("FAIL");
+    )?;
     let swapchain_framebuffers =
         swapchain.create_framebuffers_for(&render_pass, &depth_buffer, &color_buffer)?;
 
@@ -223,7 +194,7 @@ impl Renderer {
         ];
 
         let util_command_pool = command::CommandPool::util(&device)?;
-        let descriptor_sets = descriptor::DescriptorSets::new(&device);
+        let descriptor_sets = descriptor::DescriptorSets::new(&device)?;
 
         Ok(Self {
             instance,
@@ -256,14 +227,7 @@ impl Renderer {
 
         self.swapchain_image_idx = self
             .swapchain
-            .acquire_next_image(Some(&frame_sync.image_available))
-            .map_err(|e| {
-                if let swapchain::SwapchainError::OutOfDate = e {
-                    RenderError::NeedsResize(ResizeReason::OutOfDate)
-                } else {
-                    RenderError::Swapchain(e)
-                }
-            })?;
+            .acquire_next_image(Some(&frame_sync.image_available))?;
 
         // This means that we received an image that might be in the process of rendering
         if let Some(frame_idx) = self.image_to_frame_idx[self.swapchain_image_idx as usize] {
@@ -321,14 +285,7 @@ impl Renderer {
 
         let status = self
             .swapchain
-            .enqueue_present(self.device.present_queue(), present_info.build())
-            .map_err(|e| {
-                if let swapchain::SwapchainError::OutOfDate = e {
-                    RenderError::NeedsResize(ResizeReason::OutOfDate)
-                } else {
-                    RenderError::Swapchain(e)
-                }
-            })?;
+            .enqueue_present(self.device.present_queue(), present_info.build())?;
 
         if let swapchain::SwapchainStatus::SubOptimal = status {
             return Err(RenderError::NeedsResize(ResizeReason::SubOptimal));
@@ -400,13 +357,13 @@ impl Renderer {
         &mut self,
         h: &Handle<uniform::UniformBuffer>,
         data: &T,
-    ) -> Result<(), mem::MemoryError> {
+    ) -> Result<(), RenderError> {
         let ubuf = self
             .uniform_buffers
             .get_mut(h, self.frame_idx as usize)
-            .expect("Failed to update uniform");
+            .ok_or_else(|| RenderError::InvalidHandle(h.id()))?;
 
-        ubuf.update_with(data)
+        ubuf.update_with(data).map_err(RenderError::UniformBuffer)
     }
 
     pub fn create_descriptor_set(
@@ -415,15 +372,20 @@ impl Renderer {
         uniform_buffer_handle: &Handle<uniform::UniformBuffer>,
         texture_handle: &Handle<texture::Texture>,
     ) -> Result<Handle<descriptor::DescriptorSet>, RenderError> {
-        let gfx_pipeline = self.get_resource(gfx_pipeline_handle).expect("FAIL");
+        let gfx_pipeline = self
+            .get_resource(gfx_pipeline_handle)
+            .ok_or_else(|| RenderError::InvalidHandle(gfx_pipeline_handle.id()))?;
         assert_eq!(gfx_pipeline.vk_descriptor_set_layouts().len(), 1);
 
         let uniform_buffers = self
             .uniform_buffers
             .get_all(uniform_buffer_handle)
-            .ok_or(RenderError::MissingUniformBuffersForDescriptor)?;
+            .ok_or_else(|| RenderError::InvalidHandle(uniform_buffer_handle.id()))?;
 
-        let texture = self.textures.get(texture_handle).expect("FAIL");
+        let texture = self
+            .textures
+            .get(texture_handle)
+            .ok_or_else(|| RenderError::InvalidHandle(texture_handle.id()))?;
         let descriptor = descriptor::DescriptorSetDescriptor {
             layout: gfx_pipeline.vk_descriptor_set_layouts()[0],
             uniform_buffers,
@@ -432,7 +394,7 @@ impl Renderer {
 
         self.descriptor_sets
             .create(descriptor)
-            .map_err(RenderError::DescriptorSet)
+            .map_err(RenderError::Descriptor)
     }
 
     pub fn get_descriptor_set(
