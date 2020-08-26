@@ -361,8 +361,7 @@ impl CommandBuffer {
         self,
         src: &vk::Buffer,
         dst: &vk::Image,
-        width: u32,
-        height: u32,
+        extent: &util::Extent2D,
     ) -> Self {
         // TODO: Read this info from dst (by passing not just the vk::Image)
         let info = vk::BufferImageCopy {
@@ -378,8 +377,8 @@ impl CommandBuffer {
             },
             image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
             image_extent: vk::Extent3D {
-                width,
-                height,
+                width: extent.width,
+                height: extent.height,
                 depth: 1,
             },
         };

@@ -119,13 +119,16 @@ impl DeviceBuffer {
             MemoryUsage::GpuOnly,
         )?;
 
-        copy_buffer(
-            queue,
-            command_pool,
-            &staging.vk_buffer,
-            &dst_buffer.vk_buffer,
-            staging.size(),
-        )?;
+        let cmd_buf = command_pool
+            .begin_single_submit()
+            .map_err(MemoryError::CopyCommandPool)?
+            .copy_buffer(staging.vk_buffer(), dst_buffer.vk_buffer(), staging.size())
+            .end()
+            .map_err(MemoryError::CopyCommandBuffer)?;
+
+        queue
+            .submit_and_wait(&cmd_buf)
+            .map_err(MemoryError::CopySubmit)?;
 
         Ok(dst_buffer)
     }
@@ -172,34 +175,14 @@ impl std::ops::Drop for DeviceBuffer {
     }
 }
 
-fn copy_buffer(
-    queue: &Queue,
-    command_pool: &CommandPool,
-    src: &vk::Buffer,
-    dst: &vk::Buffer,
-    size: usize,
-) -> Result<(), MemoryError> {
-    let cmd_buf = command_pool
-        .begin_single_submit()
-        .map_err(MemoryError::CopyCommandPool)?
-        .copy_buffer(&src, &dst, size)
-        .end()
-        .map_err(MemoryError::CopyCommandBuffer)?;
-
-    queue
-        .submit_and_wait(&cmd_buf)
-        .map_err(MemoryError::CopySubmit)
-}
-
 fn transition_image_layout(
-    queue: &Queue,
-    command_pool: &CommandPool,
+    cmd_buf: CommandBuffer,
     vk_image: &vk::Image,
     mip_levels: u32,
     _vk_format: vk::Format,
     old_layout: vk::ImageLayout,
     new_layout: vk::ImageLayout,
-) -> Result<(), MemoryError> {
+) -> CommandBuffer {
     // Note: The barrier below does not really matter at the moment as we wait on the fence
     // directly after submitting. If the code is used elsewhere, it makes the following
     // assumptions:
@@ -241,36 +224,7 @@ fn transition_image_layout(
         ..Default::default()
     };
 
-    let cmd_buf = command_pool
-        .begin_single_submit()
-        .map_err(MemoryError::CopyCommandPool)?
-        .pipeline_barrier(&barrier, src_stage, dst_stage)
-        .end()
-        .map_err(MemoryError::CopyCommandBuffer)?;
-
-    queue
-        .submit_and_wait(&cmd_buf)
-        .map_err(MemoryError::CopySubmit)
-}
-
-fn copy_buffer_to_image(
-    queue: &Queue,
-    command_pool: &CommandPool,
-    src: &vk::Buffer,
-    dst: &vk::Image,
-    width: u32,
-    height: u32,
-) -> Result<(), MemoryError> {
-    let cmd_buf = command_pool
-        .begin_single_submit()
-        .map_err(MemoryError::CopyCommandPool)?
-        .copy_buffer_to_image(src, dst, width, height)
-        .end()
-        .map_err(MemoryError::CopyCommandBuffer)?;
-
-    queue
-        .submit_and_wait(&cmd_buf)
-        .map_err(MemoryError::CopySubmit)
+    cmd_buf.pipeline_barrier(&barrier, src_stage, dst_stage)
 }
 
 // TODO: This code depends on vk_image being TRANSfER_DST_OPTIMAL. We should track this together
@@ -458,7 +412,7 @@ impl DeviceImage {
         device: &Device,
         queue: &Queue,
         command_pool: &CommandPool,
-        extents: util::Extent2D,
+        extent: util::Extent2D,
         format: util::Format,
         mip_levels: u32,
         data: &[u8],
@@ -470,7 +424,7 @@ impl DeviceImage {
             | vk::ImageUsageFlags::SAMPLED;
         let dst_image = Self::empty_2d(
             device,
-            extents,
+            extent,
             format,
             usage,
             MemoryUsage::GpuOnly,
@@ -478,32 +432,22 @@ impl DeviceImage {
             vk::SampleCountFlags::TYPE_1,
         )?;
 
-        transition_image_layout(
-            queue,
-            command_pool,
+        // Transitioned to SHADER_READ_ONLY_OPTIMAL during mipmap generation
+        let cmd_buf = command_pool
+            .begin_single_submit()
+            .map_err(MemoryError::CopyCommandPool)?;
+
+        let cmd_buf = transition_image_layout(
+            cmd_buf,
             &dst_image.vk_image,
             mip_levels,
             format.into(),
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        )?;
+        )
+        .copy_buffer_to_image(&staging.vk_buffer, dst_image.vk_image(), &extent);
 
-        copy_buffer_to_image(
-            queue,
-            command_pool,
-            &staging.vk_buffer,
-            &dst_image.vk_image,
-            extents.width,
-            extents.height,
-        )?;
-
-        // Transitioned to SHADER_READ_ONLY_OPTIMAL during mipmap generation
-        // TODO: Reuse this command buffer above
-        let mut cmd_buf = command_pool
-            .begin_single_submit()
-            .map_err(MemoryError::CopyCommandPool)?;
-
-        cmd_buf = generate_mipmaps(cmd_buf, dst_image.vk_image(), &extents, mip_levels)
+        let cmd_buf = generate_mipmaps(cmd_buf, dst_image.vk_image(), &extent, mip_levels)
             .end()
             .map_err(MemoryError::CopyCommandBuffer)?;
 
