@@ -71,14 +71,6 @@ fn get_fname(dir: &str, target: &str) -> std::path::PathBuf {
     std::env::current_dir().unwrap().join(dir).join(fname)
 }
 
-fn create_file(dir: &str, target: &str) -> std::fs::File {
-    std::fs::create_dir_all(dir).expect("Failed to create_dir_all");
-    let fname = get_fname(dir, target);
-
-    println!("will be located under: '{:?}'", fname);
-    std::fs::File::create(fname).expect("Failed to create file")
-}
-
 fn load_file(fname: &std::path::Path) -> std::io::Cursor<Vec<u8>> {
     use std::io::Read;
     let mut buf = Vec::new();
@@ -93,10 +85,11 @@ fn load_url(dir: &str, target: &str) -> std::io::Cursor<Vec<u8>> {
     if fname.exists() {
         println!("File already exists: '{}'. Reusing!", fname.display());
     } else {
-        let mut file = create_file(dir, target);
         println!("File to download: '{}'", fname.display());
-        let body = reqwest::blocking::get(target).unwrap().text().unwrap();
-        std::io::copy(&mut body.as_bytes(), &mut file).expect("failed to copy");
+        std::fs::create_dir_all(dir).expect("Failed to create_dir_all");
+        let mut file = std::fs::File::create(&fname).expect("Failed to create file");
+        let body = reqwest::blocking::get(target).unwrap().bytes().unwrap();
+        std::io::copy(&mut body.as_ref(), &mut file).expect("failed to copy");
     }
 
     load_file(&fname)
