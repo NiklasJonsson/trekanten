@@ -4,7 +4,6 @@ use ash::vk;
 use crate::device::VkDeviceHandle;
 
 use crate::device::HasVkDevice;
-use crate::device::VkDevice;
 
 #[derive(Debug, Copy, Clone)]
 pub enum SemaphoreError {

@@ -7,7 +7,6 @@ use crate::color_buffer::ColorBuffer;
 use crate::depth_buffer::DepthBuffer;
 use crate::device::Device;
 use crate::device::HasVkDevice;
-use crate::device::VkDevice;
 use crate::framebuffer::{Framebuffer, FramebufferError};
 use crate::image::{ImageView, ImageViewError};
 use crate::instance::Instance;

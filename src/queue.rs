@@ -4,7 +4,7 @@ use ash::vk;
 use crate::device::VkDeviceHandle;
 
 use crate::command::CommandBuffer;
-use crate::device::{HasVkDevice, VkDevice};
+use crate::device::HasVkDevice;
 use crate::sync::Fence;
 use crate::sync::FenceError;
 

@@ -5,7 +5,6 @@ use crate::device::VkDeviceHandle;
 
 use crate::device::Device;
 use crate::device::HasVkDevice;
-use crate::device::VkDevice;
 
 #[derive(Clone, Debug)]
 pub enum RenderPassError {

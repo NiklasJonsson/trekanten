@@ -4,7 +4,6 @@ use ash::vk;
 use crate::device::VkDeviceHandle;
 
 use crate::device::HasVkDevice;
-use crate::device::VkDevice;
 use crate::image::ImageView;
 use crate::render_pass::RenderPass;
 use crate::util;
