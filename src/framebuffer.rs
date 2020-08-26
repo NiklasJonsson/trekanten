@@ -3,7 +3,7 @@ use ash::vk;
 
 use std::rc::Rc;
 
-use crate::device::AsVkDevice;
+use crate::device::HasVkDevice;
 use crate::device::VkDevice;
 use crate::image::ImageView;
 use crate::render_pass::RenderPass;
@@ -36,7 +36,7 @@ impl std::ops::Drop for Framebuffer {
 }
 
 impl Framebuffer {
-    pub fn new<D: AsVkDevice>(
+    pub fn new<D: HasVkDevice>(
         device: &D,
         attachments: &[&ImageView],
         render_pass: &RenderPass,

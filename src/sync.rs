@@ -3,7 +3,7 @@ use ash::vk;
 
 use std::rc::Rc;
 
-use crate::device::AsVkDevice;
+use crate::device::HasVkDevice;
 use crate::device::VkDevice;
 
 #[derive(Debug, Copy, Clone)]
@@ -33,7 +33,7 @@ impl std::ops::Drop for Semaphore {
 }
 
 impl Semaphore {
-    pub fn new<D: AsVkDevice>(device: &D) -> Result<Self, SemaphoreError> {
+    pub fn new<D: HasVkDevice>(device: &D) -> Result<Self, SemaphoreError> {
         let vk_device = device.vk_device();
         let info = vk::SemaphoreCreateInfo::default();
 
@@ -83,7 +83,7 @@ impl std::ops::Drop for Fence {
 }
 
 impl Fence {
-    fn new<D: AsVkDevice>(device: &D, flags: vk::FenceCreateFlags) -> Result<Self, FenceError> {
+    fn new<D: HasVkDevice>(device: &D, flags: vk::FenceCreateFlags) -> Result<Self, FenceError> {
         let vk_device = device.vk_device();
         let info = vk::FenceCreateInfo {
             flags,
@@ -102,11 +102,11 @@ impl Fence {
         })
     }
 
-    pub fn signaled<D: AsVkDevice>(device: &D) -> Result<Self, FenceError> {
+    pub fn signaled<D: HasVkDevice>(device: &D) -> Result<Self, FenceError> {
         Self::new(device, vk::FenceCreateFlags::SIGNALED)
     }
 
-    pub fn unsignaled<D: AsVkDevice>(device: &D) -> Result<Self, FenceError> {
+    pub fn unsignaled<D: HasVkDevice>(device: &D) -> Result<Self, FenceError> {
         Self::new(device, vk::FenceCreateFlags::empty())
     }
 

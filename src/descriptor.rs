@@ -2,8 +2,8 @@ use ash::vk;
 
 use ash::version::DeviceV1_0;
 
-use crate::device::AsVkDevice;
 use crate::device::Device;
+use crate::device::HasVkDevice;
 use crate::device::VkDeviceHandle;
 use crate::resource::{BufferedStorage, Handle};
 use crate::texture::Texture;

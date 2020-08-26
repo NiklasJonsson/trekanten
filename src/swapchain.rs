@@ -5,8 +5,8 @@ use std::rc::Rc;
 
 use crate::color_buffer::ColorBuffer;
 use crate::depth_buffer::DepthBuffer;
-use crate::device::AsVkDevice;
 use crate::device::Device;
+use crate::device::HasVkDevice;
 use crate::device::VkDevice;
 use crate::framebuffer::{Framebuffer, FramebufferError};
 use crate::image::{ImageView, ImageViewError};

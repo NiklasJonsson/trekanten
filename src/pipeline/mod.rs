@@ -7,8 +7,8 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::device::AsVkDevice;
 use crate::device::Device;
+use crate::device::HasVkDevice;
 use crate::device::VkDeviceHandle;
 use crate::render_pass::RenderPass;
 use crate::resource::{Handle, Storage};

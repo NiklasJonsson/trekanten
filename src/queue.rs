@@ -4,7 +4,7 @@ use ash::vk;
 use std::rc::Rc;
 
 use crate::command::CommandBuffer;
-use crate::device::{AsVkDevice, VkDevice};
+use crate::device::{HasVkDevice, VkDevice};
 use crate::sync::Fence;
 use crate::sync::FenceError;
 
@@ -46,7 +46,7 @@ pub struct Queue {
 }
 
 impl Queue {
-    pub fn new<D: AsVkDevice>(device: D, vk_queue: vk::Queue) -> Self {
+    pub fn new<D: HasVkDevice>(device: D, vk_queue: vk::Queue) -> Self {
         Self {
             vk_device: device.vk_device(),
             vk_queue,

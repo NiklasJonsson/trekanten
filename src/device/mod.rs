@@ -22,11 +22,11 @@ pub type VkDevice = ash::Device;
 pub type VkDeviceHandle = Rc<ash::Device>;
 pub type AllocatorHandle = Rc<Allocator>;
 
-pub trait AsVkDevice {
+pub trait HasVkDevice {
     fn vk_device(&self) -> VkDeviceHandle;
 }
 
-impl AsVkDevice for VkDeviceHandle {
+impl HasVkDevice for VkDeviceHandle {
     fn vk_device(&self) -> VkDeviceHandle {
         Rc::clone(&self)
     }
@@ -73,7 +73,7 @@ pub struct Device {
     _parent_lifetime_token: LifetimeToken<Instance>,
 }
 
-impl AsVkDevice for Device {
+impl HasVkDevice for Device {
     fn vk_device(&self) -> VkDeviceHandle {
         Rc::clone(&self.inner_device.vk_device)
     }

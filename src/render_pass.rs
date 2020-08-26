@@ -3,8 +3,8 @@ use ash::vk;
 
 use std::rc::Rc;
 
-use crate::device::AsVkDevice;
 use crate::device::Device;
+use crate::device::HasVkDevice;
 use crate::device::VkDevice;
 
 #[derive(Clone, Debug)]

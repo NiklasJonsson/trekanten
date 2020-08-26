@@ -263,7 +263,6 @@ fn main() -> Result<(), trekanten::RenderError> {
 
         let cmd_buf = frame
             .new_command_buffer()?
-            .begin_single_submit()?
             .begin_render_pass(render_pass, framebuffer, extent)
             .bind_graphics_pipeline(&gfx_pipeline)
             .bind_descriptor_set(&desc_set, &gfx_pipeline)

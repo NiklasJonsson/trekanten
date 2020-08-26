@@ -4,8 +4,8 @@ use ash::version::DeviceV1_0;
 use ash::vk;
 
 use crate::command::CommandPool;
-use crate::device::AsVkDevice;
 use crate::device::Device;
+use crate::device::HasVkDevice;
 use crate::device::VkDeviceHandle;
 use crate::image::ImageView;
 use crate::mem::DeviceImage;

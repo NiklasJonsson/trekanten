@@ -3,7 +3,7 @@ use ash::vk;
 
 use std::rc::Rc;
 
-use crate::device::AsVkDevice;
+use crate::device::HasVkDevice;
 use crate::device::VkDevice;
 use crate::util;
 
@@ -33,7 +33,7 @@ impl std::ops::Drop for ImageView {
 }
 
 impl ImageView {
-    pub fn new<D: AsVkDevice>(
+    pub fn new<D: HasVkDevice>(
         device: &D,
         vk_image: &vk::Image,
         format: util::Format,

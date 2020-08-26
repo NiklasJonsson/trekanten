@@ -4,8 +4,8 @@ use ash::vk;
 use std::rc::Rc;
 
 use crate::descriptor::DescriptorSet;
-use crate::device::AsVkDevice;
 use crate::device::Device;
+use crate::device::HasVkDevice;
 use crate::device::VkDeviceHandle;
 use crate::framebuffer::Framebuffer;
 use crate::mesh::IndexBuffer;
