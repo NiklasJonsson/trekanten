@@ -3,9 +3,8 @@ use ash::vk;
 use vk_mem::{Allocation, AllocationCreateInfo, AllocationInfo, MemoryUsage};
 
 use crate::command::CommandBuffer;
-use crate::command::CommandBufferError;
+use crate::command::CommandError;
 use crate::command::CommandPool;
-use crate::command::CommandPoolError;
 use crate::device::AllocatorHandle;
 use crate::device::Device;
 use crate::queue::Queue;
@@ -16,8 +15,7 @@ use crate::util;
 pub enum MemoryError {
     BufferCreation(vk_mem::Error),
     ImageCreation(vk_mem::Error),
-    CopyCommandPool(CommandPoolError),
-    CopyCommandBuffer(CommandBufferError),
+    CopyCommand(CommandError),
     CopySubmit(QueueError),
     MemoryMapping(vk_mem::Error),
 }
@@ -121,10 +119,10 @@ impl DeviceBuffer {
 
         let cmd_buf = command_pool
             .begin_single_submit()
-            .map_err(MemoryError::CopyCommandPool)?
+            .map_err(MemoryError::CopyCommand)?
             .copy_buffer(staging.vk_buffer(), dst_buffer.vk_buffer(), staging.size())
             .end()
-            .map_err(MemoryError::CopyCommandBuffer)?;
+            .map_err(MemoryError::CopyCommand)?;
 
         queue
             .submit_and_wait(&cmd_buf)
@@ -435,7 +433,7 @@ impl DeviceImage {
         // Transitioned to SHADER_READ_ONLY_OPTIMAL during mipmap generation
         let cmd_buf = command_pool
             .begin_single_submit()
-            .map_err(MemoryError::CopyCommandPool)?;
+            .map_err(MemoryError::CopyCommand)?;
 
         let cmd_buf = transition_image_layout(
             cmd_buf,
@@ -449,7 +447,7 @@ impl DeviceImage {
 
         let cmd_buf = generate_mipmaps(cmd_buf, dst_image.vk_image(), &extent, mip_levels)
             .end()
-            .map_err(MemoryError::CopyCommandBuffer)?;
+            .map_err(MemoryError::CopyCommand)?;
 
         queue
             .submit_and_wait(&cmd_buf)

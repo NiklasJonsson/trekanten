@@ -8,16 +8,12 @@ use std::os::raw::c_char;
 use crate::instance::Instance;
 use crate::util::lifetime::LifetimeToken;
 
-#[derive(Debug, Clone)]
-pub enum DebugUtilsError {
-    Creation(vk::Result),
-}
+use thiserror::Error;
 
-impl std::error::Error for DebugUtilsError {}
-impl std::fmt::Display for DebugUtilsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
+#[derive(Debug, Error)]
+pub enum DebugUtilsError {
+    #[error("Failed to create vulkan debug utils extension {0}")]
+    Creation(vk::Result),
 }
 
 pub struct DebugUtils {

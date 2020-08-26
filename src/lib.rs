@@ -96,7 +96,7 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn new_command_buffer(&self) -> Result<command::CommandBuffer, command::CommandPoolError> {
+    pub fn new_command_buffer(&self) -> Result<command::CommandBuffer, command::CommandError> {
         self.gfx_command_pool
             .create_command_buffer(command::CommandBufferSubmission::Single)
     }

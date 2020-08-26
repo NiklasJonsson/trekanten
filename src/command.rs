@@ -1,6 +1,8 @@
 use ash::version::DeviceV1_0;
 use ash::vk;
 
+use thiserror::Error;
+
 use crate::descriptor::DescriptorSet;
 use crate::device::Device;
 use crate::device::HasVkDevice;
@@ -16,24 +18,16 @@ use crate::util;
 
 // TODO: Merge errors
 
-#[derive(Debug)]
-pub enum CommandPoolError {
-    Creation(vk::Result),
-    CommandBufferAlloc(vk::Result),
-    CommandBuffer(CommandBufferError),
-}
-
-impl std::error::Error for CommandPoolError {}
-impl std::fmt::Display for CommandPoolError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<CommandBufferError> for CommandPoolError {
-    fn from(e: CommandBufferError) -> Self {
-        Self::CommandBuffer(e)
-    }
+#[derive(Debug, Error)]
+pub enum CommandError {
+    #[error("Command pool creation failed: {0}")]
+    PoolCreation(vk::Result),
+    #[error("Command buffer allocation failed: {0}")]
+    BufferAlloc(vk::Result),
+    #[error("Command buffer begin() failed: {0}")]
+    BufferBegin(vk::Result),
+    #[error("Command buffer end() failed: {0}")]
+    BufferEnd(vk::Result),
 }
 
 pub struct CommandPool {
@@ -52,7 +46,7 @@ impl std::ops::Drop for CommandPool {
 }
 
 impl CommandPool {
-    fn new(device: &Device, qfam: QueueFamily) -> Result<Self, CommandPoolError> {
+    fn new(device: &Device, qfam: QueueFamily) -> Result<Self, CommandError> {
         let info = vk::CommandPoolCreateInfo {
             queue_family_index: qfam.index,
             ..Default::default()
@@ -63,7 +57,7 @@ impl CommandPool {
         let vk_command_pool = unsafe {
             vk_device
                 .create_command_pool(&info, None)
-                .map_err(CommandPoolError::Creation)?
+                .map_err(CommandError::PoolCreation)?
         };
 
         Ok(Self {
@@ -73,18 +67,18 @@ impl CommandPool {
         })
     }
 
-    pub fn graphics(device: &Device) -> Result<Self, CommandPoolError> {
+    pub fn graphics(device: &Device) -> Result<Self, CommandError> {
         Self::new(device, device.graphics_queue_family().clone())
     }
 
-    pub fn util(device: &Device) -> Result<Self, CommandPoolError> {
+    pub fn util(device: &Device) -> Result<Self, CommandError> {
         Self::new(device, device.util_queue_family().clone())
     }
 
     pub fn create_command_buffer(
         &self,
         submission_type: CommandBufferSubmission,
-    ) -> Result<CommandBuffer, CommandPoolError> {
+    ) -> Result<CommandBuffer, CommandError> {
         let mut r = self.create_command_buffers(1, submission_type)?;
         debug_assert_eq!(r.len(), 1);
         Ok(r.remove(0))
@@ -94,7 +88,7 @@ impl CommandPool {
         &self,
         amount: u32,
         submission_type: CommandBufferSubmission,
-    ) -> Result<Vec<CommandBuffer>, CommandPoolError> {
+    ) -> Result<Vec<CommandBuffer>, CommandError> {
         let info = vk::CommandBufferAllocateInfo::builder()
             .command_pool(self.vk_command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -103,7 +97,7 @@ impl CommandPool {
         let allocated = unsafe {
             self.vk_device
                 .allocate_command_buffers(&info)
-                .map_err(CommandPoolError::CommandBufferAlloc)?
+                .map_err(CommandError::BufferAlloc)?
         };
 
         Ok(allocated
@@ -116,24 +110,11 @@ impl CommandPool {
                     submission_type,
                 )
             })
-            .collect::<Result<Vec<CommandBuffer>, CommandBufferError>>()?)
+            .collect::<Result<Vec<CommandBuffer>, CommandError>>()?)
     }
 
-    pub fn begin_single_submit(&self) -> Result<CommandBuffer, CommandPoolError> {
+    pub fn begin_single_submit(&self) -> Result<CommandBuffer, CommandError> {
         self.create_command_buffer(CommandBufferSubmission::Single)
-    }
-}
-
-#[derive(Debug)]
-pub enum CommandBufferError {
-    Begin(vk::Result),
-    End(vk::Result),
-}
-
-impl std::error::Error for CommandBufferError {}
-impl std::fmt::Display for CommandBufferError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
     }
 }
 
@@ -159,7 +140,7 @@ impl CommandBuffer {
         vk_cmd_buffer: vk::CommandBuffer,
         queue_flags: vk::QueueFlags,
         submission_type: CommandBufferSubmission,
-    ) -> Result<Self, CommandBufferError> {
+    ) -> Result<Self, CommandError> {
         let flags = match submission_type {
             CommandBufferSubmission::Single => vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
             _ => vk::CommandBufferUsageFlags::empty(),
@@ -173,7 +154,7 @@ impl CommandBuffer {
         unsafe {
             vk_device
                 .begin_command_buffer(vk_cmd_buffer, &info)
-                .map_err(CommandBufferError::Begin)?;
+                .map_err(CommandError::BufferBegin)?;
         };
 
         Ok(Self {
@@ -192,11 +173,11 @@ impl CommandBuffer {
         self.is_started
     }
 
-    pub fn end(self) -> Result<Self, CommandBufferError> {
+    pub fn end(self) -> Result<Self, CommandError> {
         unsafe {
             self.vk_device
                 .end_command_buffer(self.vk_cmd_buffer)
-                .map_err(CommandBufferError::End)?;
+                .map_err(CommandError::BufferEnd)?;
         }
         Ok(self)
     }
@@ -296,31 +277,6 @@ impl CommandBuffer {
 
         self
     }
-
-    /*
-    // TODO: Typesafety
-    pub fn draw(
-        self,
-        n_vertices: u32,
-        n_instances: u32,
-        first_vertex: u32,
-        first_instance: u32,
-    ) -> Self {
-        assert!(self.queue_flags.contains(vk::QueueFlags::GRAPHICS));
-        }
-        unsafe {
-            self.vk_device.cmd_draw(
-                self.vk_cmd_buffer,
-                n_vertices,
-                n_instances,
-                first_vertex,
-                first_instance,
-            );
-        }
-
-        self
-    }
-    */
 
     pub fn draw_indexed(self, n_vertices: u32) -> Self {
         assert!(self.queue_flags.contains(vk::QueueFlags::GRAPHICS));

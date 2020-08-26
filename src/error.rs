@@ -8,7 +8,7 @@ pub enum ResizeReason {
 
 #[derive(Debug)]
 pub enum RenderError {
-    CommandBuffer(command::CommandBufferError),
+    Command(command::CommandError),
     Instance(instance::InstanceError),
     DebugUtils(util::vk_debug::DebugUtilsError),
     Surface(surface::SurfaceError),
@@ -16,7 +16,6 @@ pub enum RenderError {
     Swapchain(swapchain::SwapchainError),
     RenderPass(render_pass::RenderPassError),
     Pipeline(pipeline::PipelineError),
-    CommandPool(command::CommandPoolError),
     Frame(crate::FrameSynchronizationError),
     Fence(sync::FenceError),
     Queue(queue::QueueError),
@@ -31,12 +30,6 @@ impl std::error::Error for RenderError {}
 impl std::fmt::Display for RenderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
-    }
-}
-
-impl From<command::CommandBufferError> for RenderError {
-    fn from(cbe: command::CommandBufferError) -> Self {
-        Self::CommandBuffer(cbe)
     }
 }
 
@@ -82,9 +75,9 @@ impl From<pipeline::PipelineError> for RenderError {
     }
 }
 
-impl From<command::CommandPoolError> for RenderError {
-    fn from(e: command::CommandPoolError) -> Self {
-        Self::CommandPool(e)
+impl From<command::CommandError> for RenderError {
+    fn from(e: command::CommandError) -> Self {
+        Self::Command(e)
     }
 }
 
