@@ -33,7 +33,7 @@ impl ColorBuffer {
     ) -> Result<Self, ColorBufferError> {
         let usage =
             vk::ImageUsageFlags::TRANSIENT_ATTACHMENT | vk::ImageUsageFlags::COLOR_ATTACHMENT;
-        let props = vk::MemoryPropertyFlags::DEVICE_LOCAL;
+        let props = vk_mem::MemoryUsage::GpuOnly;
         let mip_levels = 1; // No mip maps
         let _image = DeviceImage::empty_2d(
             device,

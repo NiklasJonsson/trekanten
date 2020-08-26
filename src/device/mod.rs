@@ -2,6 +2,8 @@ use ash::version::DeviceV1_0;
 use ash::version::InstanceV1_0;
 use ash::vk;
 
+use vk_mem::Allocator;
+
 use std::rc::Rc;
 
 use crate::instance::Instance;
@@ -18,6 +20,7 @@ pub use error::DeviceError;
 
 pub type VkDevice = ash::Device;
 pub type VkDeviceHandle = Rc<ash::Device>;
+pub type AllocatorHandle = Rc<Allocator>;
 
 pub trait AsVkDevice {
     fn vk_device(&self) -> VkDeviceHandle;
@@ -36,23 +39,19 @@ struct PhysicalDeviceProperties {
     max_supported_msaa_sample_count: vk::SampleCountFlags,
 }
 
-pub struct Device {
-    vk_device: VkDeviceHandle,
-    vk_phys_device: vk::PhysicalDevice,
+struct QueueInfo {
     queue_families: QueueFamilies,
     graphics_queue: Queue,
     present_queue: Queue,
-    _parent_lifetime_token: LifetimeToken<Instance>,
-    physical_device_properties: PhysicalDeviceProperties,
 }
 
-impl AsVkDevice for Device {
-    fn vk_device(&self) -> VkDeviceHandle {
-        Rc::clone(&self.vk_device)
-    }
+// Use this to handle drop-order. Could have been done with unsafe/ManuallyDrop but this seems the easiest
+// This needs to be after the allocator in the declaration order inside Device to ensure the allocator is destroyed before this.
+struct InnerDevice {
+    vk_device: VkDeviceHandle,
 }
 
-impl std::ops::Drop for Device {
+impl std::ops::Drop for InnerDevice {
     fn drop(&mut self) {
         // TODO: Change to weak
         if !Rc::strong_count(&self.vk_device) == 1 {
@@ -60,8 +59,23 @@ impl std::ops::Drop for Device {
                 "References to inner vk device still existing but Device is being destroyed!"
             );
         }
-
         unsafe { self.vk_device.destroy_device(None) };
+    }
+}
+
+pub struct Device {
+    allocator: AllocatorHandle,
+    queue_info: QueueInfo,
+    vk_phys_device: vk::PhysicalDevice,
+
+    physical_device_properties: PhysicalDeviceProperties,
+    inner_device: InnerDevice,
+    _parent_lifetime_token: LifetimeToken<Instance>,
+}
+
+impl AsVkDevice for Device {
+    fn vk_device(&self) -> VkDeviceHandle {
+        Rc::clone(&self.inner_device.vk_device)
     }
 }
 
@@ -167,44 +181,62 @@ impl Device {
             }
         };
 
-        Ok(Self {
-            vk_device,
-            vk_phys_device,
+        let queue_info = QueueInfo {
             queue_families,
             graphics_queue,
             present_queue,
+        };
+
+        let allocator = Rc::new(
+            Allocator::new(&vk_mem::AllocatorCreateInfo {
+                physical_device: vk_phys_device,
+                device: (*vk_device).clone(),
+                instance: instance.vk_instance().clone(),
+                ..Default::default()
+            })
+            .expect("Allocator creation failure"),
+        );
+
+        let inner_device = InnerDevice { vk_device };
+
+        Ok(Self {
+            inner_device,
+            allocator,
+            vk_phys_device,
+            queue_info,
             _parent_lifetime_token: instance.lifetime_token(),
             physical_device_properties,
         })
     }
 
     pub fn graphics_queue_family(&self) -> &QueueFamily {
-        &self.queue_families.graphics
+        &self.queue_info.queue_families.graphics
     }
 
     pub fn util_queue_family(&self) -> &QueueFamily {
-        &self.queue_families.graphics
+        &self.queue_info.queue_families.graphics
     }
 
     pub fn present_queue_family(&self) -> &QueueFamily {
-        &self.queue_families.present
+        &self.queue_info.queue_families.present
     }
 
     pub fn graphics_queue(&self) -> &Queue {
-        &self.graphics_queue
+        &self.queue_info.graphics_queue
     }
 
     pub fn util_queue(&self) -> &Queue {
-        &self.graphics_queue
+        &self.queue_info.graphics_queue
     }
 
     pub fn present_queue(&self) -> &Queue {
-        &self.present_queue
+        &self.queue_info.present_queue
     }
 
     pub fn wait_idle(&self) -> Result<(), DeviceError> {
         unsafe {
-            self.vk_device
+            self.inner_device
+                .vk_device
                 .device_wait_idle()
                 .map_err(DeviceError::WaitIdle)?;
         }
@@ -228,5 +260,9 @@ impl Device {
     pub fn max_msaa_sample_count(&self) -> vk::SampleCountFlags {
         self.physical_device_properties
             .max_supported_msaa_sample_count
+    }
+
+    pub fn allocator(&self) -> AllocatorHandle {
+        Rc::clone(&self.allocator)
     }
 }

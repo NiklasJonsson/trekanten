@@ -64,7 +64,7 @@ impl UniformBuffer {
                     device,
                     elem_size * n_elems,
                     vk::BufferUsageFlags::UNIFORM_BUFFER,
-                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                    vk_mem::MemoryUsage::CpuToGpu,
                 )?,
                 *elem_size,
                 *n_elems,

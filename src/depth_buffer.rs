@@ -32,7 +32,7 @@ impl DepthBuffer {
     ) -> Result<Self, DepthBufferError> {
         let format = device.depth_buffer_format().into();
         let usage = vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
-        let props = vk::MemoryPropertyFlags::DEVICE_LOCAL;
+        let props = vk_mem::MemoryUsage::GpuOnly;
         let mip_levels = 1; // No mip maps
         let _image = DeviceImage::empty_2d(
             device,
