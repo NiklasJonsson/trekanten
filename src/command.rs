@@ -83,8 +83,11 @@ impl CommandPool {
         Self::new(device, device.util_queue_family().clone())
     }
 
-    pub fn create_command_buffer(&self) -> Result<CommandBuffer, CommandPoolError> {
-        let mut r = self.create_command_buffers(1)?;
+    pub fn create_command_buffer(
+        &self,
+        submission_type: CommandBufferSubmission,
+    ) -> Result<CommandBuffer, CommandPoolError> {
+        let mut r = self.create_command_buffers(1, submission_type)?;
         debug_assert_eq!(r.len(), 1);
         Ok(r.remove(0))
     }
@@ -92,6 +95,7 @@ impl CommandPool {
     pub fn create_command_buffers(
         &self,
         amount: u32,
+        submission_type: CommandBufferSubmission,
     ) -> Result<Vec<CommandBuffer>, CommandPoolError> {
         let info = vk::CommandBufferAllocateInfo::builder()
             .command_pool(self.vk_command_pool)
@@ -111,15 +115,14 @@ impl CommandPool {
                     Rc::clone(&self.vk_device),
                     vk_cmd_buf,
                     self.queue_family.props.queue_flags,
+                    submission_type,
                 )
             })
-            .collect::<Vec<CommandBuffer>>())
+            .collect::<Result<Vec<CommandBuffer>, CommandBufferError>>()?)
     }
 
     pub fn begin_single_submit(&self) -> Result<CommandBuffer, CommandPoolError> {
-        let buf = self.create_command_buffer()?;
-        buf.begin_single_submit()
-            .map_err(CommandPoolError::CommandBuffer)
+        self.create_command_buffer(CommandBufferSubmission::Single)
     }
 }
 
@@ -136,6 +139,7 @@ impl std::fmt::Display for CommandBufferError {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub enum CommandBufferSubmission {
     Single,
     Multi,
@@ -152,29 +156,10 @@ pub struct CommandBuffer {
 }
 
 impl CommandBuffer {
-    pub fn new(
+    fn new(
         vk_device: VkDeviceHandle,
         vk_cmd_buffer: vk::CommandBuffer,
         queue_flags: vk::QueueFlags,
-    ) -> Self {
-        Self {
-            vk_cmd_buffer,
-            vk_device,
-            queue_flags,
-            is_started: false,
-        }
-    }
-
-    pub fn vk_command_buffer(&self) -> &vk::CommandBuffer {
-        &self.vk_cmd_buffer
-    }
-
-    pub fn is_started(&self) -> bool {
-        self.is_started
-    }
-
-    pub fn begin(
-        mut self,
         submission_type: CommandBufferSubmission,
     ) -> Result<Self, CommandBufferError> {
         let flags = match submission_type {
@@ -188,17 +173,25 @@ impl CommandBuffer {
         };
 
         unsafe {
-            self.vk_device
-                .begin_command_buffer(self.vk_cmd_buffer, &info)
+            vk_device
+                .begin_command_buffer(vk_cmd_buffer, &info)
                 .map_err(CommandBufferError::Begin)?;
         };
 
-        self.is_started = true;
-        Ok(self)
+        Ok(Self {
+            vk_cmd_buffer,
+            vk_device,
+            queue_flags,
+            is_started: true,
+        })
     }
 
-    pub fn begin_single_submit(self) -> Result<Self, CommandBufferError> {
-        self.begin(CommandBufferSubmission::Single)
+    pub fn vk_command_buffer(&self) -> &vk::CommandBuffer {
+        &self.vk_cmd_buffer
+    }
+
+    pub fn is_started(&self) -> bool {
+        self.is_started
     }
 
     pub fn end(self) -> Result<Self, CommandBufferError> {

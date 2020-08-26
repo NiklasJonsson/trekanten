@@ -33,7 +33,7 @@ pub struct DeviceBuffer {
     vk_buffer: vk::Buffer,
     allocation: Allocation,
     size: usize,
-    allocation_info: AllocationInfo,
+    _allocation_info: AllocationInfo,
 }
 
 impl DeviceBuffer {
@@ -60,16 +60,16 @@ impl DeviceBuffer {
         };
         let allocator = device.allocator();
 
-        let (vk_buffer, allocation, allocation_info) = allocator
+        let (vk_buffer, allocation, _allocation_info) = allocator
             .create_buffer(&buffer_info, &allocation_create_info)
             .map_err(MemoryError::BufferCreation)?;
-        log::trace!("Allocation succeeded: {:?}", &allocation_info);
+        log::trace!("Allocation succeeded: {:?}", &_allocation_info);
 
         Ok(Self {
             allocator,
             vk_buffer,
             allocation,
-            allocation_info,
+            _allocation_info,
             size,
         })
     }
@@ -148,7 +148,7 @@ impl DeviceBuffer {
         let src = data.as_ptr() as *const u8;
         unsafe {
             assert!(offset + size <= self.size());
-            let dst = dst_base.offset(offset as isize);
+            let dst = dst_base.add(offset);
             std::ptr::copy_nonoverlapping::<u8>(src, dst, size);
         }
 
